@@ -1,0 +1,608 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+
+import { apiService, UserSettings } from '@/services/api';
+
+const STORAGE_KEY = 'strmr.backendUrl';
+const API_KEY_STORAGE_KEY = 'strmr.backendApiKey';
+const DEFAULT_PORT = 7777;
+const DEFAULT_API_PATH = '/api';
+
+export interface BackendServerSettings {
+  host: string;
+  port: number;
+  apiKey: string; // Deprecated: kept for migration compatibility
+  pin: string; // 6-digit PIN for authentication
+}
+
+export interface BackendUsenetSettings {
+  name: string;
+  host: string;
+  port: number;
+  ssl: boolean;
+  username: string;
+  password: string;
+  connections: number;
+  enabled: boolean;
+}
+
+export interface BackendIndexerConfig {
+  name: string;
+  url: string;
+  apiKey: string;
+  type: string;
+  enabled: boolean;
+}
+
+export interface BackendTorrentScraperConfig {
+  name: string;
+  type: string;
+  url: string;
+  apiKey: string;
+  enabled: boolean;
+  config?: Record<string, string>;
+}
+
+export interface BackendMetadataSettings {
+  tvdbApiKey: string;
+  tmdbApiKey: string;
+  language: string;
+}
+
+export interface BackendCacheSettings {
+  directory: string;
+  metadataTtlHours: number;
+}
+
+export interface BackendWebDAVSettings {
+  enabled: boolean;
+  prefix: string;
+  username: string;
+  password: string;
+}
+
+export type StreamingServiceMode = 'usenet' | 'debrid' | 'hybrid';
+export type StreamingServicePriority = 'none' | 'usenet' | 'debrid';
+
+export interface BackendDebridProvider {
+  name: string;
+  provider: string;
+  apiKey: string;
+  enabled: boolean;
+}
+
+export interface BackendStreamingSettings {
+  maxDownloadWorkers: number;
+  maxCacheSizeMB: number;
+  serviceMode: StreamingServiceMode;
+  servicePriority: StreamingServicePriority;
+  debridProviders: BackendDebridProvider[];
+}
+
+export interface BackendTransmuxSettings {
+  enabled: boolean;
+  ffmpegPath: string;
+  ffprobePath: string;
+}
+
+export type PlaybackPreference = 'native' | 'outplayer' | 'infuse';
+
+export interface BackendPlaybackSettings {
+  preferredPlayer: PlaybackPreference;
+  preferredAudioLanguage?: string;
+  preferredSubtitleLanguage?: string;
+  preferredSubtitleMode?: 'off' | 'on' | 'forced-only';
+  useLoadingScreen?: boolean;
+}
+
+export interface BackendLiveSettings {
+  playlistUrl: string;
+  playlistCacheTtlHours: number;
+}
+
+export interface BackendShelfConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  order: number;
+}
+
+export type TrendingMovieSource = 'all' | 'released';
+
+export interface BackendHomeShelvesSettings {
+  shelves: BackendShelfConfig[];
+  trendingMovieSource?: TrendingMovieSource;
+}
+
+export interface BackendFilterSettings {
+  maxSizeMovieGb: number;
+  maxSizeEpisodeGb: number;
+  excludeHdr: boolean;
+  prioritizeHdr: boolean;
+  filterOutTerms?: string[];
+}
+
+export interface BackendSettings {
+  server: BackendServerSettings;
+  usenet: BackendUsenetSettings[];
+  indexers: BackendIndexerConfig[];
+  torrentScrapers: BackendTorrentScraperConfig[];
+  metadata: BackendMetadataSettings;
+  cache: BackendCacheSettings;
+  webdav?: BackendWebDAVSettings | null;
+  streaming: BackendStreamingSettings;
+  transmux: BackendTransmuxSettings;
+  playback: BackendPlaybackSettings;
+  live: BackendLiveSettings;
+  homeShelves: BackendHomeShelvesSettings;
+  filtering: BackendFilterSettings;
+  demoMode?: boolean;
+}
+
+interface BackendSettingsContextValue {
+  backendUrl: string;
+  backendApiKey: string;
+  isReady: boolean;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  settings: BackendSettings | null;
+  lastLoadedAt: number | null;
+  isBackendReachable: boolean;
+  retryCountdown: number | null;
+  refreshSettings: () => Promise<void>;
+  setBackendUrl: (url: string) => Promise<void>;
+  setBackendApiKey: (apiKey: string) => Promise<void>;
+  updateBackendSettings: (settings: BackendSettings) => Promise<BackendSettings>;
+  // Per-user settings
+  userSettings: UserSettings | null;
+  userSettingsLoading: boolean;
+  loadUserSettings: (userId: string) => Promise<UserSettings>;
+  updateUserSettings: (userId: string, settings: UserSettings) => Promise<UserSettings>;
+  clearUserSettings: () => void;
+}
+
+const BackendSettingsContext = createContext<BackendSettingsContextValue | undefined>(undefined);
+
+const formatErrorMessage = (err: unknown) => {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === 'string') {
+    return err;
+  }
+  return 'Unknown backend settings error';
+};
+
+const normaliseBackendUrl = (input: string) => {
+  const trimmed = input?.trim() ?? '';
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/$/, '');
+  }
+
+  const [hostPart, ...pathParts] = trimmed.split('/');
+  const hasExplicitProtocol = hostPart.includes('://');
+  if (hasExplicitProtocol) {
+    return hostPart.replace(/\/$/, '');
+  }
+
+  const hasPort = hostPart.includes(':');
+  const hostWithPort = hasPort ? hostPart : `${hostPart}:${DEFAULT_PORT}`;
+  const path = pathParts.length > 0 ? `/${pathParts.join('/')}` : DEFAULT_API_PATH;
+
+  return `http://${hostWithPort}${path}`.replace(/\/$/, '');
+};
+
+const RETRY_INTERVAL_SECONDS = 10;
+
+const isNetworkError = (err: unknown): boolean => {
+  if (err instanceof TypeError && err.message === 'Network request failed') {
+    return true;
+  }
+  // Also check for string message patterns
+  if (err instanceof Error && /network|connection|timeout|ECONNREFUSED/i.test(err.message)) {
+    return true;
+  }
+  return false;
+};
+
+export const BackendSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const mountedRef = useRef(true);
+  const [backendUrl, setBackendUrlState] = useState<string>(() => apiService.getBaseUrl());
+  const [backendApiKey, setBackendApiKeyState] = useState<string>(() => apiService.getApiKey());
+  const [isReady, setIsReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<BackendSettings | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
+  const [isBackendReachable, setIsBackendReachable] = useState(false);
+  const [retryCountdown, setRetryCountdown] = useState<number | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [userSettingsLoading, setUserSettingsLoading] = useState(false);
+  const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryFnRef = useRef<(() => Promise<boolean>) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (retryTimerRef.current) {
+        clearInterval(retryTimerRef.current);
+      }
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+      }
+    };
+  }, []);
+
+  const stopRetryTimer = useCallback(() => {
+    if (retryTimerRef.current) {
+      console.log('[BackendSettings] Stopping retry timer');
+      clearInterval(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (mountedRef.current) {
+      setRetryCountdown(null);
+    }
+    retryFnRef.current = null;
+  }, []);
+
+  const startRetryTimer = useCallback((retryFn: () => Promise<boolean>) => {
+    // Clear any existing timers
+    stopRetryTimer();
+
+    // Store the function in a ref so we always call the latest version
+    retryFnRef.current = retryFn;
+
+    // Start countdown
+    if (mountedRef.current) {
+      setRetryCountdown(RETRY_INTERVAL_SECONDS);
+    }
+
+    // Update countdown every second
+    countdownTimerRef.current = setInterval(() => {
+      if (mountedRef.current) {
+        setRetryCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            return RETRY_INTERVAL_SECONDS;
+          }
+          return prev - 1;
+        });
+      }
+    }, 1000);
+
+    // Retry at interval - call via ref to always get latest function
+    retryTimerRef.current = setInterval(() => {
+      if (retryFnRef.current) {
+        console.log('[BackendSettings] Retrying connection...');
+        retryFnRef.current()
+          .then((success) => {
+            console.log('[BackendSettings] Retry result:', success ? 'SUCCESS' : 'FAILED');
+          })
+          .catch((err) => {
+            console.log('[BackendSettings] Retry error:', err);
+          });
+      } else {
+        console.warn('[BackendSettings] Retry function ref is null!');
+      }
+    }, RETRY_INTERVAL_SECONDS * 1000);
+
+    console.log('[BackendSettings] Retry timer started, will retry every', RETRY_INTERVAL_SECONDS, 'seconds');
+  }, [stopRetryTimer]);
+
+  const applyApiBaseUrl = useCallback((candidate?: string | null) => {
+    apiService.setBaseUrl(candidate ?? undefined);
+    if (mountedRef.current) {
+      setBackendUrlState(apiService.getBaseUrl());
+    }
+  }, []);
+
+  const applyApiKey = useCallback((candidate?: string | null) => {
+    apiService.setApiKey(candidate ?? undefined);
+    if (mountedRef.current) {
+      setBackendApiKeyState(apiService.getApiKey());
+    }
+  }, []);
+
+  const persistBackendUrl = useCallback(async (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      await AsyncStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    await AsyncStorage.setItem(STORAGE_KEY, trimmed);
+  }, []);
+
+  const persistBackendApiKey = useCallback(async (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      await AsyncStorage.removeItem(API_KEY_STORAGE_KEY);
+      return;
+    }
+    await AsyncStorage.setItem(API_KEY_STORAGE_KEY, trimmed);
+  }, []);
+
+  const refreshSettingsInternal = useCallback(async (): Promise<boolean> => {
+    if (!mountedRef.current) {
+      return false;
+    }
+
+    setLoading(true);
+    try {
+      const result = (await apiService.getSettings()) as BackendSettings;
+      if (!mountedRef.current) {
+        return false;
+      }
+      console.log('[BackendSettings] Successfully connected to backend');
+      setSettings(result);
+      setError(null);
+      setLastLoadedAt(Date.now());
+      setIsBackendReachable(true);
+      stopRetryTimer();
+      // Use PIN if available, fallback to API key for backward compatibility
+      const authKey = result?.server?.pin ?? result?.server?.apiKey ?? '';
+      applyApiKey(authKey);
+      try {
+        await persistBackendApiKey(authKey);
+      } catch (storageError) {
+        console.warn('Failed to persist backend authentication key.', storageError);
+      }
+      return true;
+    } catch (err) {
+      const message = formatErrorMessage(err);
+      const networkFailure = isNetworkError(err);
+      console.warn('[BackendSettings] Failed to connect:', message);
+      if (mountedRef.current) {
+        setSettings(null);
+        setError(message);
+        if (networkFailure) {
+          setIsBackendReachable(false);
+        }
+      }
+      return false;
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [applyApiKey, persistBackendApiKey, stopRetryTimer]);
+
+  // Keep the retry function ref in sync with the latest version
+  useEffect(() => {
+    if (retryTimerRef.current) {
+      retryFnRef.current = refreshSettingsInternal;
+    }
+  }, [refreshSettingsInternal]);
+
+  const refreshSettings = useCallback(async () => {
+    const success = await refreshSettingsInternal();
+    if (!success && !retryTimerRef.current && mountedRef.current) {
+      // Start retry timer if refresh failed and no timer is running
+      startRetryTimer(refreshSettingsInternal);
+    }
+    if (!success) {
+      throw new Error('Failed to refresh settings');
+    }
+  }, [refreshSettingsInternal, startRetryTimer]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const initialise = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEY);
+        if (cancelled) {
+          return;
+        }
+        applyApiBaseUrl(stored ?? undefined);
+      } catch (err) {
+        console.warn('Failed to read stored backend URL. Falling back to defaults.', err);
+        if (!cancelled) {
+          applyApiBaseUrl(undefined);
+        }
+      }
+
+      try {
+        const storedKey = await AsyncStorage.getItem(API_KEY_STORAGE_KEY);
+        if (cancelled) {
+          return;
+        }
+        // Use stored key, or fall back to env var if no stored key
+        const envKey = process.env.EXPO_PUBLIC_API_KEY;
+        applyApiKey(storedKey || envKey || undefined);
+      } catch (err) {
+        console.warn('Failed to read stored backend API key. Clearing local copy.', err);
+        if (!cancelled) {
+          // Fall back to env var on error
+          const envKey = process.env.EXPO_PUBLIC_API_KEY;
+          applyApiKey(envKey || undefined);
+        }
+      } finally {
+        if (!cancelled && mountedRef.current) {
+          setIsReady(true);
+        }
+      }
+
+      try {
+        await refreshSettings();
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('Failed to load backend settings:', err);
+        }
+      }
+    };
+
+    void initialise();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyApiBaseUrl, applyApiKey, refreshSettings]);
+
+  const setBackendUrlHandler = useCallback(
+    async (url: string) => {
+      const normalised = normaliseBackendUrl(url);
+      await persistBackendUrl(normalised);
+      applyApiBaseUrl(normalised || undefined);
+
+      try {
+        await refreshSettings();
+      } catch (err) {
+        throw err;
+      }
+    },
+    [applyApiBaseUrl, persistBackendUrl, refreshSettings],
+  );
+
+  const setBackendApiKeyHandler = useCallback(
+    async (apiKey: string) => {
+      applyApiKey(apiKey);
+      await persistBackendApiKey(apiKey);
+    },
+    [applyApiKey, persistBackendApiKey],
+  );
+
+  const updateBackendSettings = useCallback(
+    async (next: BackendSettings) => {
+      setSaving(true);
+      try {
+        const updated = (await apiService.updateSettings(next)) as BackendSettings;
+        if (mountedRef.current) {
+          setSettings(updated);
+          setError(null);
+          setLastLoadedAt(Date.now());
+        }
+        // Use PIN if available, fallback to API key for backward compatibility
+        const authKey = updated?.server?.pin ?? updated?.server?.apiKey ?? '';
+        applyApiKey(authKey);
+        try {
+          await persistBackendApiKey(authKey);
+        } catch (storageError) {
+          console.warn('Failed to persist backend authentication key after update.', storageError);
+        }
+        return updated;
+      } catch (err) {
+        const message = formatErrorMessage(err);
+        if (mountedRef.current) {
+          setError(message);
+        }
+        throw err;
+      } finally {
+        if (mountedRef.current) {
+          setSaving(false);
+        }
+      }
+    },
+    [applyApiKey, persistBackendApiKey],
+  );
+
+  const loadUserSettings = useCallback(
+    async (userId: string): Promise<UserSettings> => {
+      if (!userId?.trim()) {
+        throw new Error('User ID is required to load user settings');
+      }
+      setUserSettingsLoading(true);
+      try {
+        const result = await apiService.getUserSettings(userId);
+        if (mountedRef.current) {
+          setUserSettings(result);
+        }
+        return result;
+      } finally {
+        if (mountedRef.current) {
+          setUserSettingsLoading(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const updateUserSettingsHandler = useCallback(
+    async (userId: string, next: UserSettings): Promise<UserSettings> => {
+      if (!userId?.trim()) {
+        throw new Error('User ID is required to update user settings');
+      }
+      setSaving(true);
+      try {
+        const updated = await apiService.updateUserSettings(userId, next);
+        if (mountedRef.current) {
+          setUserSettings(updated);
+        }
+        return updated;
+      } finally {
+        if (mountedRef.current) {
+          setSaving(false);
+        }
+      }
+    },
+    [],
+  );
+
+  const clearUserSettings = useCallback(() => {
+    setUserSettings(null);
+  }, []);
+
+  const value = useMemo<BackendSettingsContextValue>(
+    () => ({
+      backendUrl,
+      backendApiKey,
+      isReady,
+      loading,
+      saving,
+      error,
+      settings,
+      lastLoadedAt,
+      isBackendReachable,
+      retryCountdown,
+      refreshSettings,
+      setBackendUrl: setBackendUrlHandler,
+      setBackendApiKey: setBackendApiKeyHandler,
+      updateBackendSettings,
+      userSettings,
+      userSettingsLoading,
+      loadUserSettings,
+      updateUserSettings: updateUserSettingsHandler,
+      clearUserSettings,
+    }),
+    [
+      backendUrl,
+      backendApiKey,
+      isReady,
+      loading,
+      saving,
+      error,
+      settings,
+      lastLoadedAt,
+      isBackendReachable,
+      retryCountdown,
+      refreshSettings,
+      setBackendUrlHandler,
+      setBackendApiKeyHandler,
+      updateBackendSettings,
+      userSettings,
+      userSettingsLoading,
+      loadUserSettings,
+      updateUserSettingsHandler,
+      clearUserSettings,
+    ],
+  );
+
+  return <BackendSettingsContext.Provider value={value}>{children}</BackendSettingsContext.Provider>;
+};
+
+export const useBackendSettings = () => {
+  const context = useContext(BackendSettingsContext);
+  if (!context) {
+    throw new Error('useBackendSettings must be used within a BackendSettingsProvider');
+  }
+  return context;
+};

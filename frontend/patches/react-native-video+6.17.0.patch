@@ -1,0 +1,30 @@
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+index bb945fe..5be70b2 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.kt
+@@ -214,8 +214,8 @@ class ExoPlayerView @JvmOverloads constructor(context: Context, attrs: Attribute
+         val isLive = player.isCurrentMediaItemLive
+         val seekable = player.isCurrentMediaItemSeekable
+ 
+-        // Show/hide badge
+-        liveBadge.visibility = if (isLive) View.VISIBLE else View.GONE
++        // Always hide live badge - HLS is used for VOD content
++        liveBadge.visibility = View.GONE
+ 
+         // Disable/enable scrubbing based on seekable
+         val timeBar = playerView.findViewById<DefaultTimeBar?>(androidx.media3.ui.R.id.exo_progress)
+diff --git a/node_modules/react-native-video/ios/Video/Features/RCTPictureInPicture.swift b/node_modules/react-native-video/ios/Video/Features/RCTPictureInPicture.swift
+index 21d321a..6907356 100644
+--- a/node_modules/react-native-video/ios/Video/Features/RCTPictureInPicture.swift
++++ b/node_modules/react-native-video/ios/Video/Features/RCTPictureInPicture.swift
+@@ -2,9 +2,9 @@ import AVFoundation
+ import AVKit
+ import Foundation
+ import MediaAccessibility
+-import React
+ 
+ #if os(iOS)
++    import React
+     class RCTPictureInPicture: NSObject, AVPictureInPictureControllerDelegate {
+         public private(set) var _pipController: AVPictureInPictureController?
+         private var _onPictureInPictureEnter: (() -> Void)?

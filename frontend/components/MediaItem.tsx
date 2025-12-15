@@ -1,0 +1,312 @@
+import { memo, useMemo } from 'react';
+
+import { SpatialNavigationFocusableView } from '@/services/tv-navigation';
+import { Image } from './Image';
+import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle, Platform } from 'react-native';
+
+import { Title } from '../services/api';
+import type { NovaTheme } from '../theme';
+import { useTheme } from '../theme';
+import { isTV, isAndroidTV, getTVScaleMultiplier } from '../theme/tokens/tvScale';
+import { LinearGradient } from 'expo-linear-gradient';
+
+interface MediaItemProps {
+  title: Title & { percentWatched?: number };
+  onPress?: () => void;
+  onLongPress?: () => void;
+  onFocus?: () => void;
+  style?: StyleProp<ViewStyle>;
+}
+
+const createStyles = (theme: NovaTheme) => {
+  const titleLineHeight = theme.typography.title.md.lineHeight;
+  const yearLineHeight = theme.typography.caption.sm.lineHeight;
+  // Unified TV scaling - tvOS is baseline, Android TV auto-derives
+  const tvTextScale = isTV ? getTVScaleMultiplier() : 1;
+
+  const titleMinHeight = titleLineHeight * 2;
+  const infoMinHeight = titleMinHeight + yearLineHeight + theme.spacing.md * 2 + theme.spacing.xs;
+
+  // Use 2:3 aspect ratio (portrait poster) consistently
+  const compactPosterWidth = 160;
+  const compactPosterHeight = Math.round(compactPosterWidth * 1.5); // 2:3 ratio = 240
+
+  return StyleSheet.create({
+    container: {
+      backgroundColor: theme.colors.background.surface,
+      borderRadius: theme.radius.md,
+      overflow: 'hidden',
+      borderWidth: 3,
+      borderColor: 'transparent',
+    },
+    containerFocused: {
+      borderColor: theme.colors.accent.primary,
+    },
+    containerCompact: {
+      width: compactPosterWidth,
+      height: compactPosterHeight,
+    },
+    imageContainer: {
+      width: '100%',
+      aspectRatio: 2 / 3,
+      backgroundColor: theme.colors.background.elevated,
+      position: 'relative',
+    },
+    imageContainerCompact: {
+      height: compactPosterHeight,
+      aspectRatio: 2 / 3, // Maintain 2:3 ratio on mobile
+    },
+    poster: {
+      width: '100%',
+      height: '100%',
+    },
+    placeholder: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme.colors.background.elevated,
+      paddingHorizontal: theme.spacing.md,
+    },
+    placeholderText: {
+      ...theme.typography.body.sm,
+      color: theme.colors.text.muted,
+      textAlign: 'center',
+    },
+    // Desktop/TV info below image (legacy) - keep for reference
+    info: {
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.md,
+      minHeight: infoMinHeight,
+      justifyContent: 'flex-start',
+      gap: theme.spacing.xs,
+    },
+    // Overlay info used on mobile (already) and now TV to match Search styling
+    infoCompact: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.md,
+      gap: theme.spacing.xs,
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      minHeight: '40%',
+    },
+    textGradient: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    title: {
+      ...theme.typography.title.md,
+      color: theme.colors.text.primary,
+      marginBottom: theme.spacing.xs,
+      minHeight: titleMinHeight,
+      textAlign: 'center',
+      zIndex: 1,
+    },
+    // TV title to match index page card styling
+    titleTV: {
+      ...theme.typography.body.md,
+      ...(isTV
+        ? {
+            // Design for tvOS at 1.5x, Android TV auto-scales
+            fontSize: Math.round(theme.typography.body.md.fontSize * 1.5 * tvTextScale),
+            lineHeight: Math.round(theme.typography.body.md.lineHeight * 1.5 * tvTextScale),
+          }
+        : null),
+      color: theme.colors.text.primary,
+      textAlign: 'center',
+      zIndex: 1,
+      fontWeight: '600',
+    },
+    titleCompact: {
+      ...theme.typography.body.sm,
+      color: theme.colors.text.primary,
+      textAlign: 'center',
+      zIndex: 1,
+      fontWeight: '600',
+    },
+    year: {
+      ...theme.typography.caption.sm,
+      color: theme.colors.text.secondary,
+      textAlign: 'center',
+      zIndex: 1,
+    },
+    // TV year to match index page card styling
+    yearTV: {
+      ...theme.typography.body.sm,
+      ...(isTV
+        ? {
+            // Design for tvOS at 1.25x, Android TV auto-scales
+            fontSize: Math.round(theme.typography.body.sm.fontSize * 1.25 * tvTextScale),
+            lineHeight: Math.round(theme.typography.body.sm.lineHeight * 1.25 * tvTextScale),
+          }
+        : null),
+      color: theme.colors.text.secondary,
+      textAlign: 'center',
+      zIndex: 1,
+    },
+    yearCompact: {
+      ...theme.typography.caption.sm,
+      color: theme.colors.text.secondary,
+      textAlign: 'center',
+      zIndex: 1,
+    },
+    yearPlaceholder: {
+      height: yearLineHeight,
+      width: '100%',
+    },
+    // Media type badge (TV/MOVIE) to match Search page card styling
+    // Android TV: reduce size by 30% (multiply by 0.7)
+    badge: {
+      position: 'absolute',
+      top: Math.round(theme.spacing.sm * (isAndroidTV ? 0.7 : 1)),
+      right: Math.round(theme.spacing.sm * (isAndroidTV ? 0.7 : 1)),
+      backgroundColor: 'rgba(0, 0, 0, 0.8)',
+      paddingHorizontal: Math.round(theme.spacing.md * (isAndroidTV ? 0.7 : 1)),
+      paddingVertical: Math.round(theme.spacing.xs * (isAndroidTV ? 0.7 : 1)),
+      borderRadius: Math.round(theme.radius.sm * (isAndroidTV ? 0.7 : 1)),
+      borderWidth: isAndroidTV ? 1 : 2,
+      borderColor: theme.colors.accent.primary,
+      zIndex: 2,
+    },
+    badgeText: {
+      ...theme.typography.caption.sm,
+      color: theme.colors.accent.primary,
+      fontWeight: '700',
+      fontSize: Math.round(16 * (isAndroidTV ? 0.7 : 1)),
+      letterSpacing: 0.5,
+    },
+    progressBadge: {
+      position: 'absolute',
+      top: theme.spacing.sm,
+      right: theme.spacing.sm,
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      // Design badge for tvOS at 1.25x scale, Android TV auto-derives
+      paddingHorizontal: Math.round(theme.spacing.sm * (isTV ? 1.25 * tvTextScale : 1)),
+      paddingVertical: Math.round(theme.spacing.xs * (isTV ? 1.25 * tvTextScale : 1)),
+      borderRadius: Math.round(theme.radius.sm * (isTV ? 1.25 * tvTextScale : 1)),
+      zIndex: 2,
+    },
+    progressBadgeText: {
+      ...theme.typography.caption.sm,
+      // Design text for tvOS at 1.25x scale, Android TV auto-derives
+      fontSize: Math.round(theme.typography.caption.sm.fontSize * (isTV ? 1.25 * tvTextScale : 1)),
+      lineHeight: Math.round(theme.typography.caption.sm.lineHeight * (isTV ? 1.25 * tvTextScale : 1)),
+      color: theme.colors.text.primary,
+      fontWeight: '600',
+    },
+  });
+};
+
+// Memoize the component to prevent unnecessary re-renders
+const MediaItem = memo(function MediaItem({ title, onPress, onLongPress, onFocus, style }: MediaItemProps) {
+  const theme = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const isCompact = theme.breakpoint === 'compact';
+
+  const handlePress = () => {
+    onPress?.();
+  };
+
+  const handleLongPress = () => {
+    onLongPress?.();
+  };
+
+  const handleFocus = () => {
+    onFocus?.();
+  };
+
+  if (isCompact) {
+    return (
+      <Pressable
+        onPress={handlePress}
+        onLongPress={handleLongPress}
+        delayLongPress={500}
+        style={[styles.container, styles.containerCompact, style]}
+        accessibilityRole="button">
+        <View style={[styles.imageContainer, styles.imageContainerCompact]}>
+          {title.poster?.url ? (
+            <Image source={title.poster.url} style={styles.poster} contentFit="cover" />
+          ) : (
+            <View style={styles.placeholder}>
+              <Text style={styles.placeholderText}>No artwork available</Text>
+            </View>
+          )}
+          {/* Progress badge - hide if less than 5% */}
+          {title.percentWatched !== undefined && title.percentWatched >= 5 && (
+            <View style={styles.progressBadge}>
+              <Text style={styles.progressBadgeText}>{Math.round(title.percentWatched)}%</Text>
+            </View>
+          )}
+          <View style={[styles.info, styles.infoCompact]}>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
+              locations={[0, 0.6, 1]}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.textGradient}
+            />
+            <Text style={styles.titleCompact} numberOfLines={2}>
+              {title.name}
+            </Text>
+            {title.year ? (
+              <Text style={styles.yearCompact}>{title.year}</Text>
+            ) : (
+              <View style={styles.yearPlaceholder} />
+            )}
+          </View>
+        </View>
+      </Pressable>
+    );
+  }
+
+  // TV/Desktop: Replicate Search page card styling (overlay gradient + title/year + media type badge)
+  return (
+    <SpatialNavigationFocusableView onSelect={handlePress} onFocus={handleFocus}>
+      {({ isFocused }: { isFocused: boolean }) => (
+        <View style={[styles.container, style, isFocused && styles.containerFocused]}>
+          <View style={styles.imageContainer}>
+            {title.poster?.url ? (
+              <Image source={title.poster.url} style={styles.poster} contentFit="cover" transition={0} />
+            ) : (
+              <View style={styles.placeholder}>
+                <Text style={styles.placeholderText}>No artwork available</Text>
+              </View>
+            )}
+            {/* Media type badge */}
+            {title.mediaType && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{title.mediaType === 'series' ? 'TV' : 'MOVIE'}</Text>
+              </View>
+            )}
+            {/* Progress badge - hide if less than 5% */}
+            {title.percentWatched !== undefined && title.percentWatched >= 5 && (
+              <View style={styles.progressBadge}>
+                <Text style={styles.progressBadgeText}>{Math.round(title.percentWatched)}%</Text>
+              </View>
+            )}
+            {/* Overlay info to match Search page */}
+            <View style={[styles.infoCompact]}>
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
+                locations={[0, 0.6, 1]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={styles.textGradient}
+              />
+              <Text style={styles.titleTV} numberOfLines={2}>
+                {title.name}
+              </Text>
+              {title.year ? <Text style={styles.yearTV}>{title.year}</Text> : <View style={styles.yearPlaceholder} />}
+            </View>
+          </View>
+        </View>
+      )}
+    </SpatialNavigationFocusableView>
+  );
+});
+
+export default MediaItem;

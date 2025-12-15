@@ -1,0 +1,195 @@
+import { useCallback, useEffect, useState } from 'react';
+
+import { useBackendSettings } from '@/components/BackendSettingsContext';
+
+import { apiService, SearchResult, TrendingItem } from '../services/api';
+
+export interface UseApiState<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+const DEFAULT_SEARCH_DEBOUNCE_MS = 400;
+const MIN_SEARCH_QUERY_LENGTH = 2;
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => clearTimeout(timeoutId);
+  }, [value, delayMs]);
+
+  return debouncedValue;
+}
+
+// Hook for trending movies
+export function useTrendingMovies(userId?: string | null): UseApiState<TrendingItem[]> {
+  const { backendUrl, isReady } = useBackendSettings();
+  const [data, setData] = useState<TrendingItem[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (!isReady) {
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await apiService.getTrendingMovies(userId ?? undefined);
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch trending movies');
+    } finally {
+      setLoading(false);
+    }
+  }, [isReady, userId]);
+
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+    fetchData();
+  }, [isReady, backendUrl, fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+
+// Hook for trending TV shows
+export function useTrendingTVShows(userId?: string | null): UseApiState<TrendingItem[]> {
+  const { backendUrl, isReady } = useBackendSettings();
+  const [data, setData] = useState<TrendingItem[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    if (!isReady) {
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await apiService.getTrendingTVShows(userId ?? undefined);
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch trending TV shows');
+    } finally {
+      setLoading(false);
+    }
+  }, [isReady, userId]);
+
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+    fetchData();
+  }, [isReady, backendUrl, fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+
+// Helper to deduplicate and sort search results
+function mergeAndSortResults(results: SearchResult[]): SearchResult[] {
+  const deduped = new Map<string, SearchResult>();
+
+  for (const result of results) {
+    const title = result.title;
+    const idKey =
+      title.id ||
+      `${title.mediaType ?? 'unknown'}-${title.name?.toLowerCase() ?? 'unknown'}-${title.year ?? 'unknown'}`;
+    const existing = deduped.get(idKey);
+    if (!existing || existing.score < result.score) {
+      deduped.set(idKey, result);
+    }
+  }
+
+  return Array.from(deduped.values()).sort((a, b) => b.score - a.score);
+}
+
+export function useSearchTitles(query: string): UseApiState<SearchResult[]> {
+  const { backendUrl, isReady } = useBackendSettings();
+  const [data, setData] = useState<SearchResult[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const debouncedQuery = useDebouncedValue(query.trim(), DEFAULT_SEARCH_DEBOUNCE_MS);
+
+  const refetch = useCallback(() => {
+    setRefreshToken((token) => token + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+
+    if (!debouncedQuery || debouncedQuery.length < MIN_SEARCH_QUERY_LENGTH) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let pendingCount = 2;
+    const allResults: SearchResult[] = [];
+
+    setLoading(true);
+    setError(null);
+    setData(null);
+
+    const handleResults = (results: SearchResult[], mediaType: string) => {
+      if (cancelled) return;
+
+      const normalised = (results ?? []).map((result) => ({
+        ...result,
+        title: { ...result.title, mediaType: result.title.mediaType || mediaType },
+      }));
+
+      allResults.push(...normalised);
+      setData(mergeAndSortResults(allResults));
+    };
+
+    const handleComplete = () => {
+      pendingCount--;
+      if (pendingCount === 0 && !cancelled) {
+        setLoading(false);
+      }
+    };
+
+    const handleError = (err: unknown) => {
+      if (cancelled) return;
+      // Only set error if we have no results yet
+      if (allResults.length === 0) {
+        setError(err instanceof Error ? err.message : 'Failed to search titles');
+      }
+      handleComplete();
+    };
+
+    // Fire both searches independently - show results as they arrive
+    apiService
+      .searchMovies(debouncedQuery)
+      .then((results) => {
+        handleResults(results, 'movie');
+        handleComplete();
+      })
+      .catch(handleError);
+
+    apiService
+      .searchTVShows(debouncedQuery)
+      .then((results) => {
+        handleResults(results, 'series');
+        handleComplete();
+      })
+      .catch(handleError);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, backendUrl, isReady, refreshToken]);
+
+  return { data, loading, error, refetch };
+}

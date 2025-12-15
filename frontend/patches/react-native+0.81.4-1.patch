@@ -1,0 +1,39 @@
+diff --git a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
+index fdd7e95..5e0271f 100644
+--- a/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
++++ b/node_modules/react-native/scripts/codegen/generate-artifacts-executor/generateRCTThirdPartyComponents.js
+@@ -138,7 +138,7 @@ function generateRCTThirdPartyComponents(
+     .flatMap(library => {
+       const components = componentsInLibraries[library];
+       return components.map(({componentName, className}) => {
+-        return `\t\t@"${componentName}": NSClassFromString(@"${className}"), // ${library}`;
++        return `\t\tRCT_ADD_THIRD_PARTY_COMPONENT(@\"${componentName}\", @\"${className}\"); // ${library}`;
+       });
+     })
+     .join('\n');
+diff --git a/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template b/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
+index 4ce5107..ef9d6cb 100644
+--- a/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
++++ b/node_modules/react-native/scripts/codegen/templates/RCTThirdPartyComponentsProviderMM.template
+@@ -19,9 +19,19 @@
+   static dispatch_once_t nativeComponentsToken;
+ 
+   dispatch_once(&nativeComponentsToken, ^{
+-    thirdPartyComponents = @{
++#define RCT_ADD_THIRD_PARTY_COMPONENT(componentName, className)                     \
++    do {                                                                            \
++      Class<RCTComponentViewProtocol> componentClass = NSClassFromString(className); \
++      if (componentClass != Nil) {                                                  \
++        components[componentName] = componentClass;                                 \
++      }                                                                             \
++    } while (0)
++
++    NSMutableDictionary<NSString *, Class<RCTComponentViewProtocol>> *components =
++        [NSMutableDictionary new];
+ {thirdPartyComponentsMapping}
+-    };
++    thirdPartyComponents = [components copy];
++#undef RCT_ADD_THIRD_PARTY_COMPONENT
+   });
+ 
+   return thirdPartyComponents;

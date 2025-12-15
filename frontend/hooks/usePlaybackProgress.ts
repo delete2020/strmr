@@ -1,0 +1,214 @@
+import { useCallback, useRef, useEffect } from 'react';
+import apiService, { PlaybackProgressUpdate } from '../services/api';
+
+export interface PlaybackProgressOptions {
+  /**
+   * How often to send progress updates (in milliseconds)
+   * Default: 10000 (10 seconds)
+   */
+  updateInterval?: number;
+
+  /**
+   * Minimum time change required to trigger an update (in seconds)
+   * Prevents excessive updates when user is paused
+   * Default: 5 seconds
+   */
+  minTimeChange?: number;
+
+  /**
+   * Enable debug logging
+   * Default: false
+   */
+  debug?: boolean;
+}
+
+export interface UsePlaybackProgressReturn {
+  /**
+   * Report current playback position
+   */
+  reportProgress: (position: number, duration: number) => void;
+
+  /**
+   * Clear the progress tracking interval
+   */
+  stopTracking: () => void;
+
+  /**
+   * Force an immediate progress update
+   */
+  forceUpdate: (position: number, duration: number) => Promise<void>;
+}
+
+/**
+ * Hook for tracking playback progress and automatically sending updates to the backend
+ */
+export function usePlaybackProgress(
+  userId: string,
+  mediaInfo: {
+    mediaType: 'movie' | 'episode';
+    itemId: string;
+    // Episode-specific
+    seasonNumber?: number;
+    episodeNumber?: number;
+    seriesId?: string;
+    seriesName?: string;
+    episodeName?: string;
+    // Movie-specific
+    movieName?: string;
+    year?: number;
+    externalIds?: Record<string, string>;
+  },
+  options: PlaybackProgressOptions = {},
+): UsePlaybackProgressReturn {
+  const {
+    updateInterval = 10000,
+    minTimeChange = 5,
+    debug = false,
+  } = options;
+
+  const lastUpdateTimeRef = useRef<number>(0);
+  const lastPositionRef = useRef<number>(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentPositionRef = useRef<number>(0);
+  const currentDurationRef = useRef<number>(0);
+  const isUnmountedRef = useRef<boolean>(false);
+
+  const log = useCallback((...args: unknown[]) => {
+    if (debug) {
+      console.log('[usePlaybackProgress]', ...args);
+    }
+  }, [debug]);
+
+  const sendUpdate = useCallback(async (position: number, duration: number) => {
+    if (isUnmountedRef.current) {
+      return;
+    }
+
+    // Validate inputs
+    if (!Number.isFinite(position) || position < 0) {
+      log('Invalid position:', position);
+      return;
+    }
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+      log('Invalid duration:', duration);
+      return;
+    }
+
+    // Skip if position hasn't changed enough
+    const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
+    const positionDiff = Math.abs(position - lastPositionRef.current);
+
+    if (timeSinceLastUpdate < updateInterval && positionDiff < minTimeChange) {
+      log('Skipping update - insufficient change', { timeSinceLastUpdate, positionDiff });
+      return;
+    }
+
+    const update: PlaybackProgressUpdate = {
+      mediaType: mediaInfo.mediaType,
+      itemId: mediaInfo.itemId,
+      position,
+      duration,
+      externalIds: mediaInfo.externalIds,
+      seasonNumber: mediaInfo.seasonNumber,
+      episodeNumber: mediaInfo.episodeNumber,
+      seriesId: mediaInfo.seriesId,
+      seriesName: mediaInfo.seriesName,
+      episodeName: mediaInfo.episodeName,
+      movieName: mediaInfo.movieName,
+      year: mediaInfo.year,
+    };
+
+    try {
+      log('Sending progress update', {
+        position,
+        duration,
+        percentWatched: ((position / duration) * 100).toFixed(2) + '%',
+      });
+
+      const result = await apiService.updatePlaybackProgress(userId, update);
+
+      lastUpdateTimeRef.current = Date.now();
+      lastPositionRef.current = position;
+
+      log('Progress update sent successfully', result);
+    } catch (error) {
+      console.error('[usePlaybackProgress] Failed to send progress update:', error);
+      console.error('[usePlaybackProgress] Update payload was:', update);
+    }
+  }, [userId, mediaInfo, updateInterval, minTimeChange, log]);
+
+  const reportProgress = useCallback((position: number, duration: number) => {
+    currentPositionRef.current = position;
+    currentDurationRef.current = duration;
+  }, []);
+
+  const forceUpdate = useCallback(async (position: number, duration: number) => {
+    // Temporarily clear the throttling
+    lastUpdateTimeRef.current = 0;
+    await sendUpdate(position, duration);
+  }, [sendUpdate]);
+
+  const stopTracking = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      log('Stopped tracking');
+    }
+  }, [log]);
+
+  // Set up periodic progress reporting
+  useEffect(() => {
+    log('Starting progress tracking', { updateInterval });
+
+    intervalRef.current = setInterval(() => {
+      const position = currentPositionRef.current;
+      const duration = currentDurationRef.current;
+
+      if (position > 0 && duration > 0) {
+        sendUpdate(position, duration);
+      }
+    }, updateInterval);
+
+    return () => {
+      stopTracking();
+    };
+  }, [sendUpdate, stopTracking, updateInterval, log]);
+
+  // Send final update on unmount
+  useEffect(() => {
+    return () => {
+      isUnmountedRef.current = true;
+
+      // Send one final update with the last known position
+      const position = currentPositionRef.current;
+      const duration = currentDurationRef.current;
+
+      if (position > 0 && duration > 0) {
+        // Don't await this - fire and forget on unmount
+        apiService.updatePlaybackProgress(userId, {
+          mediaType: mediaInfo.mediaType,
+          itemId: mediaInfo.itemId,
+          position,
+          duration,
+          externalIds: mediaInfo.externalIds,
+          seasonNumber: mediaInfo.seasonNumber,
+          episodeNumber: mediaInfo.episodeNumber,
+          seriesId: mediaInfo.seriesId,
+          seriesName: mediaInfo.seriesName,
+          episodeName: mediaInfo.episodeName,
+          movieName: mediaInfo.movieName,
+          year: mediaInfo.year,
+        }).catch((error) => {
+          console.warn('[usePlaybackProgress] Failed to send final progress update:', error);
+        });
+      }
+    };
+  }, [userId, mediaInfo]);
+
+  return {
+    reportProgress,
+    stopTracking,
+    forceUpdate,
+  };
+}
