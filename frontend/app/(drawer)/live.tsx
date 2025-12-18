@@ -655,7 +655,7 @@ function LiveScreen() {
   // Combined data for the grid
   const combinedChannels = useMemo(
     () => [...favoriteChannels, ...regularChannels],
-    [favoriteChannels, regularChannels]
+    [favoriteChannels, regularChannels],
   );
 
   // Render item for virtualized grid (TV only)
@@ -687,9 +687,7 @@ function LiveScreen() {
                   />
                 ) : (
                   <View style={styles.placeholder}>
-                    <Text style={styles.placeholderImageText}>
-                      {channel.name?.charAt(0)?.toUpperCase() ?? '?'}
-                    </Text>
+                    <Text style={styles.placeholderImageText}>{channel.name?.charAt(0)?.toUpperCase() ?? '?'}</Text>
                   </View>
                 )}
                 {isFavorite(channel.id) && (
@@ -721,7 +719,14 @@ function LiveScreen() {
 
   // TV: Listen for LongEnter to open action modal for focused channel
   useEffect(() => {
-    if (!Platform.isTV || !isFocused || isMenuOpen || isActionModalVisible || isCategoryModalVisible || isFilterActive) {
+    if (
+      !Platform.isTV ||
+      !isFocused ||
+      isMenuOpen ||
+      isActionModalVisible ||
+      isCategoryModalVisible ||
+      isFilterActive
+    ) {
       return;
     }
 
@@ -744,7 +749,15 @@ function LiveScreen() {
     return () => {
       RemoteControlManager.removeKeydownListener(handleLongEnter);
     };
-  }, [isFocused, isMenuOpen, isActionModalVisible, isCategoryModalVisible, isFilterActive, focusedChannel, handleChannelLongPress]);
+  }, [
+    isFocused,
+    isMenuOpen,
+    isActionModalVisible,
+    isCategoryModalVisible,
+    isFilterActive,
+    focusedChannel,
+    handleChannelLongPress,
+  ]);
 
   useEffect(() => {
     console.log('[live] isActionModalVisible changed to:', isActionModalVisible);
@@ -859,120 +872,120 @@ function LiveScreen() {
 
             {/* Content area */}
             {!hasPlaylistUrl ? (
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyTitle}>Add an IPTV playlist</Text>
-                  <Text style={styles.emptyMessage}>
-                    Provide an M3U playlist URL in Settings to load channels for Live TV playback.
-                  </Text>
-                  <FocusablePressable text="Open Settings" onSelect={handleOpenSettings} />
-                </View>
-              ) : (
-                <>
-                  {loading ? <LoadingIndicator /> : null}
-                  {error ? (
-                    <View style={styles.errorContainer}>
-                      <Text style={styles.errorText}>{error}</Text>
-                      <FocusablePressable text="Try again" onSelect={() => refresh()} />
-                    </View>
-                  ) : null}
-                  {!loading && !error ? (
-                    <View style={styles.scrollWrapper}>
-                      {Platform.isTV ? (
-                        // tvOS: Virtualized grid for performance
-                        favoriteChannels.length === 0 && regularChannels.length === 0 ? (
-                          <View style={styles.emptyPlaylist}>
-                            <Text style={styles.emptyMessage}>
-                              {filterText
-                                ? `No channels match "${filterText}"`
-                                : 'No channels found in the configured playlist.'}
-                            </Text>
-                          </View>
-                        ) : (
-                          // Single combined grid - favorites first, then regular channels
-                          <DefaultFocus>
-                            <SpatialNavigationVirtualizedGrid
-                              data={combinedChannels}
-                              renderItem={renderChannelGridItem}
-                              numberOfColumns={6}
-                              itemHeight={styles.gridItemHeight}
-                              numberOfRenderedRows={16}
-                              numberOfRowsVisibleOnScreen={13}
-                              rowContainerStyle={styles.gridRowContainer}
-                              style={styles.virtualizedGrid}
-                            />
-                          </DefaultFocus>
-                        )
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>Add an IPTV playlist</Text>
+                <Text style={styles.emptyMessage}>
+                  Provide an M3U playlist URL in Settings to load channels for Live TV playback.
+                </Text>
+                <FocusablePressable text="Open Settings" onSelect={handleOpenSettings} />
+              </View>
+            ) : (
+              <>
+                {loading ? <LoadingIndicator /> : null}
+                {error ? (
+                  <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>{error}</Text>
+                    <FocusablePressable text="Try again" onSelect={() => refresh()} />
+                  </View>
+                ) : null}
+                {!loading && !error ? (
+                  <View style={styles.scrollWrapper}>
+                    {Platform.isTV ? (
+                      // tvOS: Virtualized grid for performance
+                      favoriteChannels.length === 0 && regularChannels.length === 0 ? (
+                        <View style={styles.emptyPlaylist}>
+                          <Text style={styles.emptyMessage}>
+                            {filterText
+                              ? `No channels match "${filterText}"`
+                              : 'No channels found in the configured playlist.'}
+                          </Text>
+                        </View>
                       ) : (
-                        // Mobile/web: existing vertical list
-                        <SpatialNavigationNode orientation="vertical">
-                          <SpatialNavigationScrollView
-                            ref={scrollViewRef}
-                            style={styles.scrollView}
-                            contentContainerStyle={styles.channelList}
-                            showsVerticalScrollIndicator={false}
-                            bounces={false}
-                            removeClippedSubviews={Platform.isTV && Platform.OS === 'ios'}
-                            onScroll={(event: { nativeEvent: { contentOffset: { y: number } } }) => {
-                              scrollMetricsRef.current.offset = event.nativeEvent.contentOffset.y;
-                            }}
-                            scrollEventThrottle={16}
-                            onLayout={(event: { nativeEvent: { layout: { height: number } } }) => {
-                              scrollMetricsRef.current.viewportHeight = event.nativeEvent.layout.height;
-                            }}>
-                            {favoriteChannels.length > 0 && (
-                              <>
-                                <Text style={styles.sectionTitle}>Favorites</Text>
-                                {favoriteChannels.map((channel, index) => (
-                                  <ChannelCard
-                                    key={channel.id}
-                                    channel={channel}
-                                    isFavorite={isFavorite(channel.id)}
-                                    isFirstInList={index === 0 && regularChannels.length === 0}
-                                    onSelect={handleChannelSelect}
-                                    onToggleFavorite={handleToggleFavorite}
-                                    onLongPress={handleChannelLongPress}
-                                    onFocus={handleChannelFocus}
-                                    registerCardRef={registerChannelRef}
-                                  />
-                                ))}
-                              </>
-                            )}
+                        // Single combined grid - favorites first, then regular channels
+                        <DefaultFocus>
+                          <SpatialNavigationVirtualizedGrid
+                            data={combinedChannels}
+                            renderItem={renderChannelGridItem}
+                            numberOfColumns={6}
+                            itemHeight={styles.gridItemHeight}
+                            numberOfRenderedRows={16}
+                            numberOfRowsVisibleOnScreen={13}
+                            rowContainerStyle={styles.gridRowContainer}
+                            style={styles.virtualizedGrid}
+                          />
+                        </DefaultFocus>
+                      )
+                    ) : (
+                      // Mobile/web: existing vertical list
+                      <SpatialNavigationNode orientation="vertical">
+                        <SpatialNavigationScrollView
+                          ref={scrollViewRef}
+                          style={styles.scrollView}
+                          contentContainerStyle={styles.channelList}
+                          showsVerticalScrollIndicator={false}
+                          bounces={false}
+                          removeClippedSubviews={Platform.isTV && Platform.OS === 'ios'}
+                          onScroll={(event: { nativeEvent: { contentOffset: { y: number } } }) => {
+                            scrollMetricsRef.current.offset = event.nativeEvent.contentOffset.y;
+                          }}
+                          scrollEventThrottle={16}
+                          onLayout={(event: { nativeEvent: { layout: { height: number } } }) => {
+                            scrollMetricsRef.current.viewportHeight = event.nativeEvent.layout.height;
+                          }}>
+                          {favoriteChannels.length > 0 && (
+                            <>
+                              <Text style={styles.sectionTitle}>Favorites</Text>
+                              {favoriteChannels.map((channel, index) => (
+                                <ChannelCard
+                                  key={channel.id}
+                                  channel={channel}
+                                  isFavorite={isFavorite(channel.id)}
+                                  isFirstInList={index === 0 && regularChannels.length === 0}
+                                  onSelect={handleChannelSelect}
+                                  onToggleFavorite={handleToggleFavorite}
+                                  onLongPress={handleChannelLongPress}
+                                  onFocus={handleChannelFocus}
+                                  registerCardRef={registerChannelRef}
+                                />
+                              ))}
+                            </>
+                          )}
 
-                            {regularChannels.length > 0 && (
-                              <>
-                                <Text style={styles.sectionTitle}>All Channels</Text>
-                                {regularChannels.map((channel, index) => (
-                                  <ChannelCard
-                                    key={channel.id}
-                                    channel={channel}
-                                    isFavorite={isFavorite(channel.id)}
-                                    isFirstInList={index === 0 && favoriteChannels.length === 0}
-                                    onSelect={handleChannelSelect}
-                                    onToggleFavorite={handleToggleFavorite}
-                                    onLongPress={handleChannelLongPress}
-                                    onFocus={handleChannelFocus}
-                                    registerCardRef={registerChannelRef}
-                                  />
-                                ))}
-                              </>
-                            )}
+                          {regularChannels.length > 0 && (
+                            <>
+                              <Text style={styles.sectionTitle}>All Channels</Text>
+                              {regularChannels.map((channel, index) => (
+                                <ChannelCard
+                                  key={channel.id}
+                                  channel={channel}
+                                  isFavorite={isFavorite(channel.id)}
+                                  isFirstInList={index === 0 && favoriteChannels.length === 0}
+                                  onSelect={handleChannelSelect}
+                                  onToggleFavorite={handleToggleFavorite}
+                                  onLongPress={handleChannelLongPress}
+                                  onFocus={handleChannelFocus}
+                                  registerCardRef={registerChannelRef}
+                                />
+                              ))}
+                            </>
+                          )}
 
-                            {favoriteChannels.length === 0 && regularChannels.length === 0 ? (
-                              <View style={styles.emptyPlaylist}>
-                                <Text style={styles.emptyMessage}>
-                                  {filterText
-                                    ? `No channels match "${filterText}"`
-                                    : 'No channels found in the configured playlist.'}
-                                </Text>
-                              </View>
-                            ) : null}
-                          </SpatialNavigationScrollView>
-                        </SpatialNavigationNode>
-                      )}
-                    </View>
-                  ) : null}
-                </>
-              )}
+                          {favoriteChannels.length === 0 && regularChannels.length === 0 ? (
+                            <View style={styles.emptyPlaylist}>
+                              <Text style={styles.emptyMessage}>
+                                {filterText
+                                  ? `No channels match "${filterText}"`
+                                  : 'No channels found in the configured playlist.'}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </SpatialNavigationScrollView>
+                      </SpatialNavigationNode>
+                    )}
+                  </View>
+                ) : null}
+              </>
+            )}
           </View>
         </FixedSafeAreaView>
       </SpatialNavigationRoot>
@@ -1092,8 +1105,8 @@ function LiveScreen() {
                           editable={inputFocused}
                           {...(Platform.OS === 'ios' &&
                             Platform.isTV && {
-                            keyboardAppearance: 'dark',
-                          })}
+                              keyboardAppearance: 'dark',
+                            })}
                         />
                       )}
                     </SpatialNavigationFocusableView>
@@ -1480,11 +1493,11 @@ const createStyles = (theme: NovaTheme, screenWidth: number = 1920, screenHeight
       justifyContent: 'center',
       ...(Platform.isTV
         ? {
-          shadowColor: '#000',
-          shadowOpacity: 0.35,
-          shadowOffset: { width: 0, height: 8 },
-          shadowRadius: 16,
-        }
+            shadowColor: '#000',
+            shadowOpacity: 0.35,
+            shadowOffset: { width: 0, height: 8 },
+            shadowRadius: 16,
+          }
         : null),
     },
     filterInputWrapperTVFocused: {
@@ -1493,8 +1506,8 @@ const createStyles = (theme: NovaTheme, screenWidth: number = 1920, screenHeight
       backgroundColor: theme.colors.background.elevated,
       ...(Platform.isTV
         ? {
-          shadowOpacity: 0.6,
-        }
+            shadowOpacity: 0.6,
+          }
         : null),
     },
     filterInputTV: {

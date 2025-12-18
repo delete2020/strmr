@@ -6,9 +6,7 @@ const path = require('path');
 const config = getDefaultConfig(__dirname); // eslint-disable-line no-undef
 
 const additionalSourceExts = ['vlc.tsx', 'vlc.ts', 'vlc.jsx', 'vlc.js'];
-config.resolver.sourceExts = Array.from(
-  new Set([...additionalSourceExts, ...config.resolver.sourceExts]),
-);
+config.resolver.sourceExts = Array.from(new Set([...additionalSourceExts, ...config.resolver.sourceExts]));
 
 // When enabled, the optional code below will allow Metro to resolve
 // and bundle source files with TV-specific extensions
@@ -19,10 +17,7 @@ config.resolver.sourceExts = Array.from(
 //
 if (process.env?.EXPO_TV === '1') {
   const originalSourceExts = config.resolver.sourceExts;
-  const tvSourceExts = [
-    ...originalSourceExts.map((e) => `tv.${e}`),
-    ...originalSourceExts,
-  ];
+  const tvSourceExts = [...originalSourceExts.map((e) => `tv.${e}`), ...originalSourceExts];
   config.resolver.sourceExts = tvSourceExts;
 
   // Stub out react-native-webview for tvOS since it doesn't support tvOS

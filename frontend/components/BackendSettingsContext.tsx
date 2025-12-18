@@ -256,48 +256,52 @@ export const BackendSettingsProvider: React.FC<{ children: React.ReactNode }> = 
     retryFnRef.current = null;
   }, []);
 
-  const startRetryTimer = useCallback((retryFn: () => Promise<boolean>) => {
-    // Clear any existing timers
-    stopRetryTimer();
+  const startRetryTimer = useCallback(
+    (retryFn: () => Promise<boolean>) => {
+      // Clear any existing timers
+      stopRetryTimer();
 
-    // Store the function in a ref so we always call the latest version
-    retryFnRef.current = retryFn;
+      // Store the function in a ref so we always call the latest version
+      retryFnRef.current = retryFn;
 
-    // Start countdown
-    if (mountedRef.current) {
-      setRetryCountdown(RETRY_INTERVAL_SECONDS);
-    }
-
-    // Update countdown every second
-    countdownTimerRef.current = setInterval(() => {
+      // Start countdown
       if (mountedRef.current) {
-        setRetryCountdown((prev) => {
-          if (prev === null || prev <= 1) {
-            return RETRY_INTERVAL_SECONDS;
-          }
-          return prev - 1;
-        });
+        setRetryCountdown(RETRY_INTERVAL_SECONDS);
       }
-    }, 1000);
 
-    // Retry at interval - call via ref to always get latest function
-    retryTimerRef.current = setInterval(() => {
-      if (retryFnRef.current) {
-        console.log('[BackendSettings] Retrying connection...');
-        retryFnRef.current()
-          .then((success) => {
-            console.log('[BackendSettings] Retry result:', success ? 'SUCCESS' : 'FAILED');
-          })
-          .catch((err) => {
-            console.log('[BackendSettings] Retry error:', err);
+      // Update countdown every second
+      countdownTimerRef.current = setInterval(() => {
+        if (mountedRef.current) {
+          setRetryCountdown((prev) => {
+            if (prev === null || prev <= 1) {
+              return RETRY_INTERVAL_SECONDS;
+            }
+            return prev - 1;
           });
-      } else {
-        console.warn('[BackendSettings] Retry function ref is null!');
-      }
-    }, RETRY_INTERVAL_SECONDS * 1000);
+        }
+      }, 1000);
 
-    console.log('[BackendSettings] Retry timer started, will retry every', RETRY_INTERVAL_SECONDS, 'seconds');
-  }, [stopRetryTimer]);
+      // Retry at interval - call via ref to always get latest function
+      retryTimerRef.current = setInterval(() => {
+        if (retryFnRef.current) {
+          console.log('[BackendSettings] Retrying connection...');
+          retryFnRef
+            .current()
+            .then((success) => {
+              console.log('[BackendSettings] Retry result:', success ? 'SUCCESS' : 'FAILED');
+            })
+            .catch((err) => {
+              console.log('[BackendSettings] Retry error:', err);
+            });
+        } else {
+          console.warn('[BackendSettings] Retry function ref is null!');
+        }
+      }, RETRY_INTERVAL_SECONDS * 1000);
+
+      console.log('[BackendSettings] Retry timer started, will retry every', RETRY_INTERVAL_SECONDS, 'seconds');
+    },
+    [stopRetryTimer],
+  );
 
   const applyApiBaseUrl = useCallback((candidate?: string | null) => {
     apiService.setBaseUrl(candidate ?? undefined);
@@ -505,47 +509,41 @@ export const BackendSettingsProvider: React.FC<{ children: React.ReactNode }> = 
     [applyApiKey, persistBackendApiKey],
   );
 
-  const loadUserSettings = useCallback(
-    async (userId: string): Promise<UserSettings> => {
-      if (!userId?.trim()) {
-        throw new Error('User ID is required to load user settings');
+  const loadUserSettings = useCallback(async (userId: string): Promise<UserSettings> => {
+    if (!userId?.trim()) {
+      throw new Error('User ID is required to load user settings');
+    }
+    setUserSettingsLoading(true);
+    try {
+      const result = await apiService.getUserSettings(userId);
+      if (mountedRef.current) {
+        setUserSettings(result);
       }
-      setUserSettingsLoading(true);
-      try {
-        const result = await apiService.getUserSettings(userId);
-        if (mountedRef.current) {
-          setUserSettings(result);
-        }
-        return result;
-      } finally {
-        if (mountedRef.current) {
-          setUserSettingsLoading(false);
-        }
+      return result;
+    } finally {
+      if (mountedRef.current) {
+        setUserSettingsLoading(false);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
-  const updateUserSettingsHandler = useCallback(
-    async (userId: string, next: UserSettings): Promise<UserSettings> => {
-      if (!userId?.trim()) {
-        throw new Error('User ID is required to update user settings');
+  const updateUserSettingsHandler = useCallback(async (userId: string, next: UserSettings): Promise<UserSettings> => {
+    if (!userId?.trim()) {
+      throw new Error('User ID is required to update user settings');
+    }
+    setSaving(true);
+    try {
+      const updated = await apiService.updateUserSettings(userId, next);
+      if (mountedRef.current) {
+        setUserSettings(updated);
       }
-      setSaving(true);
-      try {
-        const updated = await apiService.updateUserSettings(userId, next);
-        if (mountedRef.current) {
-          setUserSettings(updated);
-        }
-        return updated;
-      } finally {
-        if (mountedRef.current) {
-          setSaving(false);
-        }
+      return updated;
+    } finally {
+      if (mountedRef.current) {
+        setSaving(false);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const clearUserSettings = useCallback(() => {
     setUserSettings(null);

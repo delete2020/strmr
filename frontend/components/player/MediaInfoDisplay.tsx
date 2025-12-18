@@ -66,7 +66,7 @@ const formatColorInfo = (value?: string): string => {
   if (lower === 'bt2020nc' || lower === 'bt2020_ncl') return 'BT.2020 NCL';
   if (lower === 'bt2020c' || lower === 'bt2020_cl') return 'BT.2020 CL';
   // Capitalize first letter of each word for unknown values
-  return value.replace(/\b\w/g, c => c.toUpperCase());
+  return value.replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 export default function MediaInfoDisplay({
@@ -229,7 +229,9 @@ export default function MediaInfoDisplay({
   if (Platform.isTV) {
     return (
       <View style={styles.container} pointerEvents="none">
-        <Text style={styles.text} numberOfLines={maxLines}>{displayText}</Text>
+        <Text style={styles.text} numberOfLines={maxLines}>
+          {displayText}
+        </Text>
         {playerImplementation && <Text style={styles.playerImplementationText}>{playerImplementation}</Text>}
         {hdrDisplay.badge && (
           <View style={styles.hdrBadgeContainer}>
@@ -243,7 +245,9 @@ export default function MediaInfoDisplay({
 
   return (
     <Pressable style={styles.container} onPress={handlePress} disabled={!canToggle}>
-      <Text style={styles.text} numberOfLines={maxLines}>{displayText}</Text>
+      <Text style={styles.text} numberOfLines={maxLines}>
+        {displayText}
+      </Text>
       {playerImplementation && <Text style={styles.playerImplementationText}>{playerImplementation}</Text>}
       {hdrDisplay.badge && (
         <View style={styles.hdrBadgeContainer}>
@@ -255,7 +259,12 @@ export default function MediaInfoDisplay({
   );
 }
 
-const createStyles = (theme: NovaTheme, safeAreaInsets?: SafeAreaInsets, showFilename?: boolean, isLandscape?: boolean) => {
+const createStyles = (
+  theme: NovaTheme,
+  safeAreaInsets?: SafeAreaInsets,
+  showFilename?: boolean,
+  isLandscape?: boolean,
+) => {
   const isWeb = Platform.OS === 'web';
   const isMobileHandheld = (Platform.OS === 'ios' || Platform.OS === 'android') && Platform.isTV !== true;
   // Unified TV scaling - tvOS is baseline, Android TV auto-derives
@@ -282,8 +291,8 @@ const createStyles = (theme: NovaTheme, safeAreaInsets?: SafeAreaInsets, showFil
   };
   const baseMaxWidth = getBaseMaxWidth();
   const maxWidthPercent = isMobileHandheld
-    ? `${baseMaxWidth - Math.min(safeAreaRight / 4, 10)}%` as const
-    : `${baseMaxWidth}%` as const;
+    ? (`${baseMaxWidth - Math.min(safeAreaRight / 4, 10)}%` as const)
+    : (`${baseMaxWidth}%` as const);
 
   return StyleSheet.create({
     container: {

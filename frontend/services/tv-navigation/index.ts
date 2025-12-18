@@ -121,12 +121,12 @@ type LockSpatialNavigationLike = {
 type UseLockSpatialNavigationHook = () => LockSpatialNavigationLike;
 
 const fallbackUseSpatialNavigator: UseSpatialNavigatorHook = () => ({
-  grabFocus: () => { },
+  grabFocus: () => {},
 });
 
 const fallbackUseLockSpatialNavigation: UseLockSpatialNavigationHook = () => ({
-  lock: () => { },
-  unlock: () => { },
+  lock: () => {},
+  unlock: () => {},
 });
 
 const useSpatialNavigatorImpl: UseSpatialNavigatorHook =
@@ -150,10 +150,12 @@ export const SpatialNavigationVirtualizedList = spatialNavigation.SpatialNavigat
 export const SpatialNavigationVirtualizedGrid = spatialNavigation.SpatialNavigationVirtualizedGrid;
 export const SpatialNavigationDeviceTypeProvider = spatialNavigation.SpatialNavigationDeviceTypeProvider;
 export const DefaultFocus = spatialNavigation.DefaultFocus;
-export const SpatialNavigationEvents = spatialNavigation.SpatialNavigationEvents ?? {
-  FOCUSED: 'FOCUSED',
-  BLURRED: 'BLURRED',
-} as const;
+export const SpatialNavigationEvents =
+  spatialNavigation.SpatialNavigationEvents ??
+  ({
+    FOCUSED: 'FOCUSED',
+    BLURRED: 'BLURRED',
+  } as const);
 export const useSpatialNavigator = useSpatialNavigatorImpl;
 export const useLockSpatialNavigation = useLockSpatialNavigationImpl;
 

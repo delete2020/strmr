@@ -19,7 +19,6 @@ import { useShouldUseTabs } from '../../hooks/useShouldUseTabs';
 // Tabs that should remain accessible when backend is unreachable
 const ALWAYS_ACCESSIBLE_TABS = ['index', 'settings'];
 
-
 export default function DrawerLayout() {
   const theme = useTheme();
   const tabStyles = useTabsStyles(theme);

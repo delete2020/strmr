@@ -16,7 +16,7 @@ try {
 }
 
 // Re-export the appropriate Image component
-type ExpoImageProps = ComponentProps<typeof import('expo-image').Image>;
+type _ExpoImageProps = ComponentProps<typeof import('expo-image').Image>;
 
 interface ImageWrapperProps {
   source: string | { uri: string } | number;

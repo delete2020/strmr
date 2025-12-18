@@ -52,7 +52,14 @@ const WebVideoPlayer = loadWebPlayer();
 const VlcVideoPlayer = loadVlcPlayer();
 const RnvVideoPlayer = loadRnvPlayer();
 
-export type { NowPlayingMetadata, TrackInfo, VideoImplementation, VideoPlayerHandle, VideoPlayerProps, VideoProgressMeta } from './types';
+export type {
+  NowPlayingMetadata,
+  TrackInfo,
+  VideoImplementation,
+  VideoPlayerHandle,
+  VideoPlayerProps,
+  VideoProgressMeta,
+} from './types';
 
 const VideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>((props, ref) => {
   const { onImplementationResolved, forceExpoPlayer, forceRnvPlayer, forceNativeFullscreen, ...rest } = props;

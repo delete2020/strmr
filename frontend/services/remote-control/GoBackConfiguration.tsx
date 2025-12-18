@@ -1,10 +1,9 @@
 import { useRouter, usePathname, useNavigation } from 'expo-router';
-import React, { useCallback, useEffect, useRef } from 'react';
-import { BackHandler, Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { useMenuContext } from '../../components/MenuContext';
 import { isDrawerRoute } from '../../constants/routes';
 import RemoteControlManager from './RemoteControlManager';
-import { SupportedKeys } from './SupportedKeys';
 
 export const GoBackConfiguration: React.FC = () => {
   const router = useRouter();

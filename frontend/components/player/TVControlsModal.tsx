@@ -20,7 +20,13 @@ interface TVControlsModalProps {
  * The Modal creates a new view hierarchy, so we need a SpatialNavigationRoot inside
  * to make button selection work with the spatial navigation system.
  */
-const TVControlsModal: React.FC<TVControlsModalProps> = ({ visible, onRequestClose, children, isChildModalOpen = false, isSeeking = false }) => {
+const TVControlsModal: React.FC<TVControlsModalProps> = ({
+  visible,
+  onRequestClose,
+  children,
+  isChildModalOpen = false,
+  isSeeking = false,
+}) => {
   if (!Platform.isTV) {
     // On non-TV platforms, render children directly without Modal wrapper
     return visible ? <>{children}</> : null;
@@ -32,8 +38,7 @@ const TVControlsModal: React.FC<TVControlsModalProps> = ({ visible, onRequestClo
       transparent
       animationType="none"
       onRequestClose={onRequestClose}
-      supportedOrientations={['landscape']}
-    >
+      supportedOrientations={['landscape']}>
       <SpatialNavigationRoot isActive={visible && !isChildModalOpen && !isSeeking}>
         <View style={styles.modalContainer} pointerEvents="box-none" renderToHardwareTextureAndroid={true}>
           {children}

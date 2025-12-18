@@ -60,11 +60,7 @@ export function usePlaybackProgress(
   },
   options: PlaybackProgressOptions = {},
 ): UsePlaybackProgressReturn {
-  const {
-    updateInterval = 10000,
-    minTimeChange = 5,
-    debug = false,
-  } = options;
+  const { updateInterval = 10000, minTimeChange = 5, debug = false } = options;
 
   const lastUpdateTimeRef = useRef<number>(0);
   const lastPositionRef = useRef<number>(0);
@@ -73,81 +69,90 @@ export function usePlaybackProgress(
   const currentDurationRef = useRef<number>(0);
   const isUnmountedRef = useRef<boolean>(false);
 
-  const log = useCallback((...args: unknown[]) => {
-    if (debug) {
-      console.log('[usePlaybackProgress]', ...args);
-    }
-  }, [debug]);
+  const log = useCallback(
+    (...args: unknown[]) => {
+      if (debug) {
+        console.log('[usePlaybackProgress]', ...args);
+      }
+    },
+    [debug],
+  );
 
-  const sendUpdate = useCallback(async (position: number, duration: number) => {
-    if (isUnmountedRef.current) {
-      return;
-    }
+  const sendUpdate = useCallback(
+    async (position: number, duration: number) => {
+      if (isUnmountedRef.current) {
+        return;
+      }
 
-    // Validate inputs
-    if (!Number.isFinite(position) || position < 0) {
-      log('Invalid position:', position);
-      return;
-    }
+      // Validate inputs
+      if (!Number.isFinite(position) || position < 0) {
+        log('Invalid position:', position);
+        return;
+      }
 
-    if (!Number.isFinite(duration) || duration <= 0) {
-      log('Invalid duration:', duration);
-      return;
-    }
+      if (!Number.isFinite(duration) || duration <= 0) {
+        log('Invalid duration:', duration);
+        return;
+      }
 
-    // Skip if position hasn't changed enough
-    const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
-    const positionDiff = Math.abs(position - lastPositionRef.current);
+      // Skip if position hasn't changed enough
+      const timeSinceLastUpdate = Date.now() - lastUpdateTimeRef.current;
+      const positionDiff = Math.abs(position - lastPositionRef.current);
 
-    if (timeSinceLastUpdate < updateInterval && positionDiff < minTimeChange) {
-      log('Skipping update - insufficient change', { timeSinceLastUpdate, positionDiff });
-      return;
-    }
+      if (timeSinceLastUpdate < updateInterval && positionDiff < minTimeChange) {
+        log('Skipping update - insufficient change', { timeSinceLastUpdate, positionDiff });
+        return;
+      }
 
-    const update: PlaybackProgressUpdate = {
-      mediaType: mediaInfo.mediaType,
-      itemId: mediaInfo.itemId,
-      position,
-      duration,
-      externalIds: mediaInfo.externalIds,
-      seasonNumber: mediaInfo.seasonNumber,
-      episodeNumber: mediaInfo.episodeNumber,
-      seriesId: mediaInfo.seriesId,
-      seriesName: mediaInfo.seriesName,
-      episodeName: mediaInfo.episodeName,
-      movieName: mediaInfo.movieName,
-      year: mediaInfo.year,
-    };
-
-    try {
-      log('Sending progress update', {
+      const update: PlaybackProgressUpdate = {
+        mediaType: mediaInfo.mediaType,
+        itemId: mediaInfo.itemId,
         position,
         duration,
-        percentWatched: ((position / duration) * 100).toFixed(2) + '%',
-      });
+        externalIds: mediaInfo.externalIds,
+        seasonNumber: mediaInfo.seasonNumber,
+        episodeNumber: mediaInfo.episodeNumber,
+        seriesId: mediaInfo.seriesId,
+        seriesName: mediaInfo.seriesName,
+        episodeName: mediaInfo.episodeName,
+        movieName: mediaInfo.movieName,
+        year: mediaInfo.year,
+      };
 
-      const result = await apiService.updatePlaybackProgress(userId, update);
+      try {
+        log('Sending progress update', {
+          position,
+          duration,
+          percentWatched: ((position / duration) * 100).toFixed(2) + '%',
+        });
 
-      lastUpdateTimeRef.current = Date.now();
-      lastPositionRef.current = position;
+        const result = await apiService.updatePlaybackProgress(userId, update);
 
-      log('Progress update sent successfully', result);
-    } catch (error) {
-      console.error('[usePlaybackProgress] Failed to send progress update:', error);
-      console.error('[usePlaybackProgress] Update payload was:', update);
-    }
-  }, [userId, mediaInfo, updateInterval, minTimeChange, log]);
+        lastUpdateTimeRef.current = Date.now();
+        lastPositionRef.current = position;
+
+        log('Progress update sent successfully', result);
+      } catch (error) {
+        console.error('[usePlaybackProgress] Failed to send progress update:', error);
+        console.error('[usePlaybackProgress] Update payload was:', update);
+      }
+    },
+    [userId, mediaInfo, updateInterval, minTimeChange, log],
+  );
 
   const reportProgress = useCallback((position: number, duration: number) => {
     currentPositionRef.current = position;
     currentDurationRef.current = duration;
   }, []);
 
-  const forceUpdate = useCallback(async (position: number, duration: number) => {
-    // Temporarily clear the throttling
-    lastUpdateTimeRef.current = 0;
-    await sendUpdate(position, duration);
-  }, [sendUpdate]);
+  const forceUpdate = useCallback(
+    async (position: number, duration: number) => {
+      // Temporarily clear the throttling
+      lastUpdateTimeRef.current = 0;
+      await sendUpdate(position, duration);
+    },
+    [sendUpdate],
+  );
 
   const stopTracking = useCallback(() => {
     if (intervalRef.current) {
@@ -186,22 +191,24 @@ export function usePlaybackProgress(
 
       if (position > 0 && duration > 0) {
         // Don't await this - fire and forget on unmount
-        apiService.updatePlaybackProgress(userId, {
-          mediaType: mediaInfo.mediaType,
-          itemId: mediaInfo.itemId,
-          position,
-          duration,
-          externalIds: mediaInfo.externalIds,
-          seasonNumber: mediaInfo.seasonNumber,
-          episodeNumber: mediaInfo.episodeNumber,
-          seriesId: mediaInfo.seriesId,
-          seriesName: mediaInfo.seriesName,
-          episodeName: mediaInfo.episodeName,
-          movieName: mediaInfo.movieName,
-          year: mediaInfo.year,
-        }).catch((error) => {
-          console.warn('[usePlaybackProgress] Failed to send final progress update:', error);
-        });
+        apiService
+          .updatePlaybackProgress(userId, {
+            mediaType: mediaInfo.mediaType,
+            itemId: mediaInfo.itemId,
+            position,
+            duration,
+            externalIds: mediaInfo.externalIds,
+            seasonNumber: mediaInfo.seasonNumber,
+            episodeNumber: mediaInfo.episodeNumber,
+            seriesId: mediaInfo.seriesId,
+            seriesName: mediaInfo.seriesName,
+            episodeName: mediaInfo.episodeName,
+            movieName: mediaInfo.movieName,
+            year: mediaInfo.year,
+          })
+          .catch((error) => {
+            console.warn('[usePlaybackProgress] Failed to send final progress update:', error);
+          });
       }
     };
   }, [userId, mediaInfo]);

@@ -9,7 +9,7 @@
 import { SpatialNavigationRoot } from '@/services/tv-navigation';
 import { useTheme } from '@/theme';
 import { ReactNode, useEffect, useMemo, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, View, Dimensions, Platform, BackHandler } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import RemoteControlManager from '@/services/remote-control/RemoteControlManager';
 import { useMenuContext } from './MenuContext';
 

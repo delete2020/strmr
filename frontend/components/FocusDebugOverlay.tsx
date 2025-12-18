@@ -3,7 +3,10 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 
 // TVEventHandler is available on TV platforms but not always typed correctly
 type TVEventHandlerType = {
-  enable: (component: unknown, callback: (component: unknown, event: { eventType?: string; eventKeyAction?: number | string }) => void) => void;
+  enable: (
+    component: unknown,
+    callback: (component: unknown, event: { eventType?: string; eventKeyAction?: number | string }) => void,
+  ) => void;
   disable: () => void;
 };
 // eslint-disable-next-line @typescript-eslint/no-var-requires

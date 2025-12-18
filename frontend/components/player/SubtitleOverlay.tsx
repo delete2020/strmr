@@ -404,7 +404,11 @@ const styles = StyleSheet.create({
     // React Native only supports single shadow, so we use a tight radius
     // to approximate the outline effect VLC uses with freetype
     textShadowColor: '#000000',
-    textShadowOffset: isAndroidTV ? { width: 1, height: 1 } : Platform.isTV ? { width: 2, height: 2 } : { width: 1, height: 1 },
+    textShadowOffset: isAndroidTV
+      ? { width: 1, height: 1 }
+      : Platform.isTV
+        ? { width: 2, height: 2 }
+        : { width: 1, height: 1 },
     textShadowRadius: isAndroidTV ? 2 : Platform.isTV ? 4 : 1.5,
     // Additional padding for multi-line subtitles
     paddingVertical: 2,

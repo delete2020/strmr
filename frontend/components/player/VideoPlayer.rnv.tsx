@@ -349,13 +349,15 @@ const RNVideoPlayer = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     };
 
     // Build selected tracks
-    const selectedAudioTrack: SelectedTrack | undefined = typeof selectedAudioTrackIndex === 'number'
-      ? { type: SelectedTrackType.INDEX, value: selectedAudioTrackIndex }
-      : undefined;
+    const selectedAudioTrack: SelectedTrack | undefined =
+      typeof selectedAudioTrackIndex === 'number'
+        ? { type: SelectedTrackType.INDEX, value: selectedAudioTrackIndex }
+        : undefined;
 
-    const selectedTextTrack: SelectedTrack = typeof selectedSubtitleTrackIndex === 'number'
-      ? { type: SelectedTrackType.INDEX, value: selectedSubtitleTrackIndex }
-      : { type: SelectedTrackType.DISABLED, value: undefined };
+    const selectedTextTrack: SelectedTrack =
+      typeof selectedSubtitleTrackIndex === 'number'
+        ? { type: SelectedTrackType.INDEX, value: selectedSubtitleTrackIndex }
+        : { type: SelectedTrackType.DISABLED, value: undefined };
 
     return (
       <Pressable style={styles.container} onPress={onInteract} tvParallaxProperties={{ enabled: false }}>

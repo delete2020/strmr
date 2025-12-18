@@ -132,7 +132,6 @@ export interface BatchSeriesDetailsResponse {
   results: BatchSeriesDetailsItem[];
 }
 
-
 export interface TrailerResponse {
   primaryTrailer?: Trailer;
   trailers: Trailer[];
@@ -486,14 +485,7 @@ export interface PrequeueResponse {
   status: PrequeueStatus;
 }
 
-export type PrequeueStatus =
-  | 'queued'
-  | 'searching'
-  | 'resolving'
-  | 'probing'
-  | 'ready'
-  | 'failed'
-  | 'expired';
+export type PrequeueStatus = 'queued' | 'searching' | 'resolving' | 'probing' | 'ready' | 'failed' | 'expired';
 
 export interface PrequeueStatusResponse {
   prequeueId: string;
@@ -659,7 +651,8 @@ class ApiService {
       const errorText = await response.text();
       const isAuthFailure = response.status === 401;
       // Use console.warn for handled errors (400/404 client errors, health check failures, auth issues) that surface via UI
-      const isHandledError = response.status === 400 || response.status === 404 || response.status === 502 || isAuthFailure;
+      const isHandledError =
+        response.status === 400 || response.status === 404 || response.status === 502 || isAuthFailure;
       const logLevel = isHandledError ? console.warn : console.error;
       logLevel('API request failed:', response.status, response.statusText, errorText);
       const apiError: ApiError = new Error(
@@ -778,7 +771,6 @@ class ApiService {
       body: JSON.stringify(requestBody),
     });
   }
-
 
   async getMovieDetails(params: {
     tvdbId?: string | number;
@@ -1280,7 +1272,7 @@ class ApiService {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
+        Pragma: 'no-cache',
       },
     });
   }
@@ -1329,7 +1321,9 @@ class ApiService {
   async getPlaybackProgress(userId: string, mediaType: string, itemId: string): Promise<PlaybackProgress | null> {
     const safeUserId = this.normaliseUserId(userId);
     try {
-      return await this.request<PlaybackProgress>(`/users/${safeUserId}/history/progress/${mediaType}/${encodeURIComponent(itemId)}`);
+      return await this.request<PlaybackProgress>(
+        `/users/${safeUserId}/history/progress/${mediaType}/${encodeURIComponent(itemId)}`,
+      );
     } catch (error) {
       const apiError = error as { status?: number };
       if (apiError?.status === 404) {
@@ -1346,7 +1340,7 @@ class ApiService {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
+        Pragma: 'no-cache',
       },
     });
   }
@@ -1411,7 +1405,11 @@ class ApiService {
     if (typeof params.audioTrack === 'number' && Number.isFinite(params.audioTrack) && params.audioTrack >= 0) {
       search.set('audioTrack', params.audioTrack.toString());
     }
-    if (typeof params.subtitleTrack === 'number' && Number.isFinite(params.subtitleTrack) && params.subtitleTrack >= 0) {
+    if (
+      typeof params.subtitleTrack === 'number' &&
+      Number.isFinite(params.subtitleTrack) &&
+      params.subtitleTrack >= 0
+    ) {
       search.set('subtitleTrack', params.subtitleTrack.toString());
     }
 
@@ -1470,7 +1468,12 @@ class ApiService {
     });
   }
 
-  async toggleWatchStatus(userId: string, mediaType: string, id: string, metadata?: Partial<WatchStatusUpdate>): Promise<WatchStatusItem> {
+  async toggleWatchStatus(
+    userId: string,
+    mediaType: string,
+    id: string,
+    metadata?: Partial<WatchStatusUpdate>,
+  ): Promise<WatchStatusItem> {
     const safeUserId = this.normaliseUserId(userId);
     const safeMediaType = encodeURIComponent(mediaType);
     const safeId = encodeURIComponent(id);

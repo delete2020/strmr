@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Keyboard,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { FixedSafeAreaView } from '@/components/FixedSafeAreaView';
 import FocusablePressable from '@/components/FocusablePressable';
@@ -55,14 +66,12 @@ const formatErrorMessage = (err: unknown) => {
 export default function ProfilesScreen() {
   const theme = useTheme();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const styles = useMemo(
-    () => createStyles(theme, screenWidth, screenHeight),
-    [theme, screenWidth, screenHeight],
-  );
+  const styles = useMemo(() => createStyles(theme, screenWidth, screenHeight), [theme, screenWidth, screenHeight]);
   const isFocused = useIsFocused();
   const { isOpen: isMenuOpen, openMenu } = useMenuContext();
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
-  const { users, loading, error, activeUserId, selectUser, createUser, renameUser, updateColor, deleteUser, refresh } = useUserProfiles();
+  const { users, loading, error, activeUserId, selectUser, createUser, renameUser, updateColor, deleteUser, refresh } =
+    useUserProfiles();
   const { showToast } = useToast();
 
   const [newProfileName, setNewProfileName] = useState('');
@@ -341,11 +350,7 @@ export default function ProfilesScreen() {
           onSelect={() => handleProfileCardSelect(profile)}>
           {({ isFocused }: { isFocused: boolean }) => (
             <View
-              style={[
-                styles.gridCard,
-                isFocused && styles.gridCardFocused,
-                isProfileActive && styles.gridCardActive,
-              ]}>
+              style={[styles.gridCard, isFocused && styles.gridCardFocused, isProfileActive && styles.gridCardActive]}>
               <View style={[styles.gridCardAvatar, avatarColor && { backgroundColor: avatarColor }]}>
                 <Text style={styles.gridCardAvatarText}>{profile.name.charAt(0).toUpperCase()}</Text>
               </View>
@@ -365,47 +370,49 @@ export default function ProfilesScreen() {
   if (Platform.isTV) {
     return (
       <>
-        <SpatialNavigationRoot isActive={isActive} onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}>
+        <SpatialNavigationRoot
+          isActive={isActive}
+          onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}>
           <Stack.Screen options={{ headerShown: false }} />
           <FixedSafeAreaView style={styles.safeArea} edges={['top']}>
             <View style={styles.tvCenteredWrapper}>
               <View style={styles.tvContentContainer}>
-              <View style={styles.headerRow}>
-                <View>
-                  <Text style={styles.title}>Profiles</Text>
-                  <Text style={styles.description}>Select a profile or create a new one</Text>
+                <View style={styles.headerRow}>
+                  <View>
+                    <Text style={styles.title}>Profiles</Text>
+                    <Text style={styles.description}>Select a profile or create a new one</Text>
+                  </View>
+                  <SpatialNavigationNode orientation="horizontal">
+                    <FocusablePressable
+                      focusKey="profiles-refresh"
+                      text={pending === 'refresh' ? 'Refreshing…' : 'Refresh'}
+                      icon="refresh-outline"
+                      onSelect={handleRefreshProfiles}
+                      disabled={pending === 'refresh'}
+                      style={styles.headerButton}
+                    />
+                  </SpatialNavigationNode>
                 </View>
-                <SpatialNavigationNode orientation="horizontal">
-                  <FocusablePressable
-                    focusKey="profiles-refresh"
-                    text={pending === 'refresh' ? 'Refreshing…' : 'Refresh'}
-                    icon="refresh-outline"
-                    onSelect={handleRefreshProfiles}
-                    disabled={pending === 'refresh'}
-                    style={styles.headerButton}
-                  />
-                </SpatialNavigationNode>
-              </View>
 
-              {loading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color={theme.colors.accent.primary} />
-                  <Text style={styles.loadingText}>Loading profiles…</Text>
-                </View>
-              ) : (
-                <DefaultFocus>
-                  <SpatialNavigationVirtualizedGrid
-                    data={gridData}
-                    renderItem={renderGridItem}
-                    numberOfColumns={3}
-                    itemHeight={styles.gridItemHeight}
-                    numberOfRenderedRows={4}
-                    numberOfRowsVisibleOnScreen={2}
-                    rowContainerStyle={styles.gridRowContainer}
-                    style={styles.virtualizedGrid}
-                  />
-                </DefaultFocus>
-              )}
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.accent.primary} />
+                    <Text style={styles.loadingText}>Loading profiles…</Text>
+                  </View>
+                ) : (
+                  <DefaultFocus>
+                    <SpatialNavigationVirtualizedGrid
+                      data={gridData}
+                      renderItem={renderGridItem}
+                      numberOfColumns={3}
+                      itemHeight={styles.gridItemHeight}
+                      numberOfRenderedRows={4}
+                      numberOfRowsVisibleOnScreen={2}
+                      rowContainerStyle={styles.gridRowContainer}
+                      style={styles.virtualizedGrid}
+                    />
+                  </DefaultFocus>
+                )}
               </View>
             </View>
           </FixedSafeAreaView>
@@ -416,8 +423,7 @@ export default function ProfilesScreen() {
           visible={isCreateModalVisible}
           transparent={true}
           animationType="fade"
-          onRequestClose={handleCloseCreateModal}
-        >
+          onRequestClose={handleCloseCreateModal}>
           <SpatialNavigationRoot isActive={isCreateModalVisible}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContainer}>
@@ -463,9 +469,10 @@ export default function ProfilesScreen() {
                           }}
                           showSoftInputOnFocus={true}
                           editable={Platform.isTV ? isFocused : true}
-                          {...(Platform.OS === 'ios' && Platform.isTV && {
-                            keyboardAppearance: 'dark',
-                          })}
+                          {...(Platform.OS === 'ios' &&
+                            Platform.isTV && {
+                              keyboardAppearance: 'dark',
+                            })}
                         />
                       </Pressable>
                     )}
@@ -507,15 +514,18 @@ export default function ProfilesScreen() {
           visible={isProfileModalVisible && selectedProfile !== null}
           transparent={true}
           animationType="fade"
-          onRequestClose={handleCloseProfileActions}
-        >
+          onRequestClose={handleCloseProfileActions}>
           <SpatialNavigationRoot isActive={isProfileModalVisible}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContainer}>
                 {selectedProfile && (
                   <>
                     <View style={styles.profileModalHeader}>
-                      <View style={[styles.profileModalAvatar, selectedProfile.color && { backgroundColor: selectedProfile.color }]}>
+                      <View
+                        style={[
+                          styles.profileModalAvatar,
+                          selectedProfile.color && { backgroundColor: selectedProfile.color },
+                        ]}>
                         <Text style={styles.profileModalAvatarText}>
                           {selectedProfile.name.charAt(0).toUpperCase()}
                         </Text>
@@ -561,7 +571,9 @@ export default function ProfilesScreen() {
                               void handleActivateProfile(selectedProfile.id);
                               handleCloseProfileActions();
                             }}
-                            disabled={activeUserId === selectedProfile.id || pending === `activate:${selectedProfile.id}`}
+                            disabled={
+                              activeUserId === selectedProfile.id || pending === `activate:${selectedProfile.id}`
+                            }
                             style={styles.modalButton}
                             focusedStyle={styles.modalButtonFocused}
                             textStyle={styles.modalButtonText}
@@ -705,9 +717,7 @@ export default function ProfilesScreen() {
                           </Pressable>
                           <TextInput
                             value={renameValue}
-                            onChangeText={(text) =>
-                              setRenameValues((current) => ({ ...current, [user.id]: text }))
-                            }
+                            onChangeText={(text) => setRenameValues((current) => ({ ...current, [user.id]: text }))}
                             onBlur={() => {
                               if (renameValue !== user.name) {
                                 void handleRenameProfile(user.id, renameValue);

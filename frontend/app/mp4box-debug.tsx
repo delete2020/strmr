@@ -7,14 +7,7 @@ import type { NovaTheme } from '@/theme';
 import { useTheme } from '@/theme';
 import { router, Stack } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 interface ProbeResult {
   format?: {
@@ -103,7 +96,9 @@ export default function MP4BoxDebugScreen() {
 
       const result = await response.json();
       setProbeResult(result);
-      addLog(`Probe complete: DV=${result.novastream_analysis?.hasDolbyVision}, HDR10=${result.novastream_analysis?.hasHDR10}`);
+      addLog(
+        `Probe complete: DV=${result.novastream_analysis?.hasDolbyVision}, HDR10=${result.novastream_analysis?.hasHDR10}`,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       setError(message);
@@ -216,8 +211,8 @@ export default function MP4BoxDebugScreen() {
             <View style={styles.header}>
               <Text style={styles.title}>MP4Box Debug Player</Text>
               <Text style={styles.subtitle}>
-                Test Dolby Vision / HDR streaming with MP4Box instead of FFmpeg.
-                Enter a direct media URL to probe and play.
+                Test Dolby Vision / HDR streaming with MP4Box instead of FFmpeg. Enter a direct media URL to probe and
+                play.
               </Text>
             </View>
 
@@ -259,12 +254,7 @@ export default function MP4BoxDebugScreen() {
                 disabled={!sessionResult?.playlistUrl}
                 style={styles.button}
               />
-              <FocusablePressable
-                focusKey="clear-btn"
-                text="Clear"
-                onSelect={handleClear}
-                style={styles.button}
-              />
+              <FocusablePressable focusKey="clear-btn" text="Clear" onSelect={handleClear} style={styles.button} />
               <FocusablePressable
                 focusKey="back-btn"
                 text="Back"
@@ -291,9 +281,7 @@ export default function MP4BoxDebugScreen() {
                 {probeResult ? (
                   <ScrollView style={styles.cardContent}>
                     <Text style={styles.resultLabel}>Format:</Text>
-                    <Text style={styles.resultValue}>
-                      {probeResult.format?.format_name || 'N/A'}
-                    </Text>
+                    <Text style={styles.resultValue}>{probeResult.format?.format_name || 'N/A'}</Text>
 
                     <Text style={styles.resultLabel}>Duration:</Text>
                     <Text style={styles.resultValue}>
@@ -316,31 +304,17 @@ export default function MP4BoxDebugScreen() {
                     )}
 
                     <Text style={styles.resultLabel}>Dolby Vision:</Text>
-                    <Text
-                      style={[
-                        styles.resultValue,
-                        analysisInfo?.hasDolbyVision && styles.hdrActive,
-                      ]}
-                    >
-                      {analysisInfo?.hasDolbyVision
-                        ? `YES (${analysisInfo.dvProfile})`
-                        : 'No'}
+                    <Text style={[styles.resultValue, analysisInfo?.hasDolbyVision && styles.hdrActive]}>
+                      {analysisInfo?.hasDolbyVision ? `YES (${analysisInfo.dvProfile})` : 'No'}
                     </Text>
 
                     <Text style={styles.resultLabel}>HDR10:</Text>
-                    <Text
-                      style={[
-                        styles.resultValue,
-                        analysisInfo?.hasHDR10 && styles.hdrActive,
-                      ]}
-                    >
+                    <Text style={[styles.resultValue, analysisInfo?.hasHDR10 && styles.hdrActive]}>
                       {analysisInfo?.hasHDR10 ? 'YES' : 'No'}
                     </Text>
                   </ScrollView>
                 ) : (
-                  <Text style={styles.placeholder}>
-                    Enter a URL and click &quot;Probe Video&quot; to analyze
-                  </Text>
+                  <Text style={styles.placeholder}>Enter a URL and click &quot;Probe Video&quot; to analyze</Text>
                 )}
               </View>
 
@@ -369,9 +343,7 @@ export default function MP4BoxDebugScreen() {
                     </Text>
                   </ScrollView>
                 ) : (
-                  <Text style={styles.placeholder}>
-                    Click &quot;Start MP4Box Session&quot; to create HLS stream
-                  </Text>
+                  <Text style={styles.placeholder}>Click &quot;Start MP4Box Session&quot; to create HLS stream</Text>
                 )}
               </View>
             </View>

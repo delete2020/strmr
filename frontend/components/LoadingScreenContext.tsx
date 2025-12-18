@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Modal, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, Modal, Platform, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import StrmrLoadingScreen from '@/app/strmr-loading';
@@ -33,7 +33,8 @@ export function LoadingScreenProvider({ children }: LoadingScreenProviderProps) 
   const [onCancelCallback, setOnCancelCallback] = useState<(() => void) | null>(null);
   const { settings, userSettings } = useBackendSettings();
   // User settings take precedence over global settings
-  const isLoadingScreenEnabled = userSettings?.playback?.useLoadingScreen ?? settings?.playback?.useLoadingScreen ?? false;
+  const isLoadingScreenEnabled =
+    userSettings?.playback?.useLoadingScreen ?? settings?.playback?.useLoadingScreen ?? false;
   const translateX = useRef(new Animated.Value(0)).current;
 
   const showLoadingScreen = useCallback(() => {

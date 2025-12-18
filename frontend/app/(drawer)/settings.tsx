@@ -15,7 +15,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import Animated, { Layout } from 'react-native-reanimated';
+import Animated, { Layout, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import {
   useBackendSettings,
@@ -161,7 +161,10 @@ function DropdownField({ label, value, options, onChange, styles }: DropdownFiel
               key={option.value}
               text={option.label}
               onSelect={() => onChange(option.value)}
-              style={[styles.dropdownOption as ViewStyle, value === option.value && (styles.dropdownOptionSelected as ViewStyle)]}
+              style={[
+                styles.dropdownOption as ViewStyle,
+                value === option.value && (styles.dropdownOptionSelected as ViewStyle),
+              ]}
             />
           ))}
         </View>
@@ -267,13 +270,34 @@ interface DropdownOption {
 }
 
 type SettingsGridItem =
-  | { type: 'header'; id: string; title: string; description?: string }
-  | { type: 'text-field'; id: string; label: string; value: string; fieldKey: string; options?: TextInputOptions }
-  | { type: 'toggle'; id: string; label: string; value: boolean; fieldKey: string; description?: string }
-  | { type: 'dropdown'; id: string; label: string; value: string; options: DropdownOption[]; fieldKey: string }
-  | { type: 'button'; id: string; label: string; action: string; disabled?: boolean }
-  | { type: 'button-row'; id: string; buttons: Array<{ label: string; action: string; disabled?: boolean }> }
-  | { type: 'shelf-item'; id: string; shelf: BackendShelfConfig; index: number; total: number };
+  | { type: 'header'; id: string; title: string; description?: string; key?: string }
+  | {
+      type: 'text-field';
+      id: string;
+      label: string;
+      value: string;
+      fieldKey: string;
+      options?: TextInputOptions;
+      key?: string;
+    }
+  | { type: 'toggle'; id: string; label: string; value: boolean; fieldKey: string; description?: string; key?: string }
+  | {
+      type: 'dropdown';
+      id: string;
+      label: string;
+      value: string;
+      options: DropdownOption[];
+      fieldKey: string;
+      key?: string;
+    }
+  | { type: 'button'; id: string; label: string; action: string; disabled?: boolean; key?: string }
+  | {
+      type: 'button-row';
+      id: string;
+      buttons: Array<{ label: string; action: string; disabled?: boolean }>;
+      key?: string;
+    }
+  | { type: 'shelf-item'; id: string; shelf: BackendShelfConfig; index: number; total: number; key?: string };
 
 // TextInputModal Props for TV text editing
 interface TextInputModalProps {
@@ -288,7 +312,16 @@ interface TextInputModalProps {
 }
 
 // TextInputModal Component for TV - Uses View overlay (not Modal) to avoid tvOS native focus issues
-function TextInputModal({ visible, label, value, onSubmit, onCancel, options, styles, theme }: TextInputModalProps) {
+function TextInputModal({
+  visible,
+  label,
+  value,
+  onSubmit,
+  onCancel: _onCancel,
+  options,
+  styles,
+  theme,
+}: TextInputModalProps) {
   const inputRef = useRef<TextInput>(null);
   const [editValue, setEditValue] = useState(value);
   const { lock, unlock } = useLockSpatialNavigation();
@@ -421,8 +454,8 @@ function TextInputModal({ visible, label, value, onSubmit, onCancel, options, st
                     disableFullscreenUI={true}
                     {...(Platform.OS === 'ios' &&
                       Platform.isTV && {
-                      keyboardAppearance: 'dark',
-                    })}
+                        keyboardAppearance: 'dark',
+                      })}
                   />
                 )}
               </SpatialNavigationFocusableView>
@@ -570,12 +603,12 @@ const toBackendPayload = (editable: EditableBackendSettings, baseline: BackendSe
   const baselineStreaming = baseline.streaming
     ? baseline.streaming
     : {
-      serviceMode: 'usenet' as StreamingServiceMode,
-      servicePriority: 'none' as StreamingServicePriority,
-      maxDownloadWorkers: 15,
-      maxCacheSizeMB: 100,
-      debridProviders: [],
-    };
+        serviceMode: 'usenet' as StreamingServiceMode,
+        servicePriority: 'none' as StreamingServicePriority,
+        maxDownloadWorkers: 15,
+        maxCacheSizeMB: 100,
+        debridProviders: [],
+      };
   return {
     server: {
       host: editable.server.host.trim(),
@@ -647,11 +680,11 @@ const toBackendPayload = (editable: EditableBackendSettings, baseline: BackendSe
       debridProviders:
         editable.streaming.debridProviders.length > 0
           ? editable.streaming.debridProviders.map((provider, idx) => ({
-            name: provider.name.trim() || baselineStreaming.debridProviders[idx]?.name || '',
-            provider: provider.provider.trim() || baselineStreaming.debridProviders[idx]?.provider || '',
-            apiKey: provider.apiKey.trim(),
-            enabled: !!provider.enabled,
-          }))
+              name: provider.name.trim() || baselineStreaming.debridProviders[idx]?.name || '',
+              provider: provider.provider.trim() || baselineStreaming.debridProviders[idx]?.provider || '',
+              apiKey: provider.apiKey.trim(),
+              enabled: !!provider.enabled,
+            }))
           : baselineStreaming.debridProviders,
     },
     transmux: {
@@ -681,7 +714,8 @@ const toBackendPayload = (editable: EditableBackendSettings, baseline: BackendSe
     },
     homeShelves: {
       shelves: editable.homeShelves?.shelves ?? baseline.homeShelves?.shelves ?? [],
-      trendingMovieSource: editable.homeShelves?.trendingMovieSource ?? baseline.homeShelves?.trendingMovieSource ?? 'released',
+      trendingMovieSource:
+        editable.homeShelves?.trendingMovieSource ?? baseline.homeShelves?.trendingMovieSource ?? 'released',
     },
     filtering: {
       maxSizeMovieGb: toNumber(
@@ -704,6 +738,36 @@ const toBackendPayload = (editable: EditableBackendSettings, baseline: BackendSe
   };
 };
 
+// Animated wrapper for shelf items that pulses when triggered
+const AnimatedShelfItem = ({
+  children,
+  pulseKey,
+  pulseIntensity = 'primary',
+  style,
+}: {
+  children: React.ReactNode;
+  pulseKey: number;
+  pulseIntensity?: 'primary' | 'secondary';
+  style: ViewStyle[];
+}) => {
+  const scale = useSharedValue(1);
+  const prevPulseKey = useRef(pulseKey);
+
+  useEffect(() => {
+    if (pulseKey > prevPulseKey.current) {
+      const targetScale = pulseIntensity === 'primary' ? 1.05 : 1.02;
+      scale.value = withSequence(withTiming(targetScale, { duration: 150 }), withTiming(1, { duration: 200 }));
+    }
+    prevPulseKey.current = pulseKey;
+  }, [pulseKey, pulseIntensity, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return <Animated.View style={[...style, animatedStyle]}>{children}</Animated.View>;
+};
+
 function SettingsScreen() {
   const theme = useTheme();
   const { showToast } = useToast();
@@ -724,7 +788,8 @@ function SettingsScreen() {
     fieldKey: string;
     options?: TextInputOptions;
   }>({ visible: false, label: '', value: '', fieldKey: '' });
-  const isActive = isFocused && !isMenuOpen && !isHiddenChannelsModalOpen && !isUnplayableReleasesModalOpen && !textInputModal.visible;
+  const isActive =
+    isFocused && !isMenuOpen && !isHiddenChannelsModalOpen && !isUnplayableReleasesModalOpen && !textInputModal.visible;
   const [activeTab, setActiveTab] = useState<SettingsTab>('connection');
 
   const tabs = useMemo<TabOption[]>(
@@ -771,11 +836,22 @@ function SettingsScreen() {
   const backendPinInputRef = useRef<TextInput>(null);
   const audioLangInputRef = useRef<TextInput>(null);
   const subtitleLangInputRef = useRef<TextInput>(null);
+  const playlistUrlInputRef = useRef<TextInput>(null);
+  const maxMovieSizeInputRef = useRef<TextInput>(null);
+  const maxEpisodeSizeInputRef = useRef<TextInput>(null);
+  const filterTermsInputRef = useRef<TextInput>(null);
   const tempBackendUrlRef = useRef(backendUrl);
   const tempBackendPinRef = useRef(backendApiKey);
   const tempAudioLangRef = useRef('');
   const tempSubtitleLangRef = useRef('');
+  const tempPlaylistUrlRef = useRef('');
+  const tempMaxMovieSizeRef = useRef('');
+  const tempMaxEpisodeSizeRef = useRef('');
+  const tempFilterTermsRef = useRef('');
   const [activeInlineInput, setActiveInlineInput] = useState<string | null>(null);
+  const [shelfPulses, setShelfPulses] = useState<Record<string, { key: number; intensity: 'primary' | 'secondary' }>>(
+    {},
+  );
 
   // Sync temp refs with state
   useEffect(() => {
@@ -799,6 +875,22 @@ function SettingsScreen() {
   useEffect(() => {
     tempSubtitleLangRef.current = editableSettings?.playback.preferredSubtitleLanguage || '';
   }, [editableSettings?.playback.preferredSubtitleLanguage]);
+
+  useEffect(() => {
+    tempPlaylistUrlRef.current = editableSettings?.live.playlistUrl || '';
+  }, [editableSettings?.live.playlistUrl]);
+
+  useEffect(() => {
+    tempMaxMovieSizeRef.current = editableSettings?.filtering.maxSizeMovieGb || '';
+  }, [editableSettings?.filtering.maxSizeMovieGb]);
+
+  useEffect(() => {
+    tempMaxEpisodeSizeRef.current = editableSettings?.filtering.maxSizeEpisodeGb || '';
+  }, [editableSettings?.filtering.maxSizeEpisodeGb]);
+
+  useEffect(() => {
+    tempFilterTermsRef.current = editableSettings?.filtering.filterOutTerms || '';
+  }, [editableSettings?.filtering.filterOutTerms]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const { releases: unplayableReleases, unmarkUnplayable, clearAll: clearUnplayableReleases } = useUnplayableReleases();
   const playbackOptions = useMemo<
@@ -807,11 +899,13 @@ function SettingsScreen() {
       value: PlaybackPreference;
     }[]
   >(
-    () => [
-      { label: 'Native', value: 'native' },
-      { label: 'Outplayer', value: 'outplayer' },
-      { label: 'Infuse', value: 'infuse' },
-    ],
+    () =>
+      Platform.OS === 'android'
+        ? [{ label: 'Native', value: 'native' }]
+        : [
+            { label: 'Native', value: 'native' },
+            { label: 'Infuse', value: 'infuse' },
+          ],
     [],
   );
   const streamingModeOptions = useMemo(
@@ -885,24 +979,38 @@ function SettingsScreen() {
       const merged = toEditableSettings(settings);
       if (userSettings) {
         merged.playback = {
-          preferredPlayer: (userSettings.playback?.preferredPlayer as PlaybackPreference) ?? merged.playback.preferredPlayer,
-          preferredAudioLanguage: userSettings.playback?.preferredAudioLanguage ?? merged.playback.preferredAudioLanguage,
-          preferredSubtitleLanguage: userSettings.playback?.preferredSubtitleLanguage ?? merged.playback.preferredSubtitleLanguage,
-          preferredSubtitleMode: (userSettings.playback?.preferredSubtitleMode as 'off' | 'on' | 'forced-only' | undefined) ?? merged.playback.preferredSubtitleMode,
+          preferredPlayer:
+            (userSettings.playback?.preferredPlayer as PlaybackPreference) ?? merged.playback.preferredPlayer,
+          preferredAudioLanguage:
+            userSettings.playback?.preferredAudioLanguage ?? merged.playback.preferredAudioLanguage,
+          preferredSubtitleLanguage:
+            userSettings.playback?.preferredSubtitleLanguage ?? merged.playback.preferredSubtitleLanguage,
+          preferredSubtitleMode:
+            (userSettings.playback?.preferredSubtitleMode as 'off' | 'on' | 'forced-only' | undefined) ??
+            merged.playback.preferredSubtitleMode,
           useLoadingScreen: userSettings.playback?.useLoadingScreen ?? merged.playback.useLoadingScreen,
         };
         merged.homeShelves = {
-          shelves: userSettings.homeShelves?.shelves?.map((s) => ({
-            id: s.id,
-            name: s.name,
-            enabled: s.enabled,
-            order: s.order,
-          })) ?? merged.homeShelves.shelves,
-          trendingMovieSource: (userSettings.homeShelves?.trendingMovieSource as TrendingMovieSource) ?? merged.homeShelves.trendingMovieSource,
+          shelves:
+            userSettings.homeShelves?.shelves?.map((s) => ({
+              id: s.id,
+              name: s.name,
+              enabled: s.enabled,
+              order: s.order,
+            })) ?? merged.homeShelves.shelves,
+          trendingMovieSource:
+            (userSettings.homeShelves?.trendingMovieSource as TrendingMovieSource) ??
+            merged.homeShelves.trendingMovieSource,
         };
         merged.filtering = {
-          maxSizeMovieGb: userSettings.filtering?.maxSizeMovieGb != null ? String(userSettings.filtering.maxSizeMovieGb) : merged.filtering.maxSizeMovieGb,
-          maxSizeEpisodeGb: userSettings.filtering?.maxSizeEpisodeGb != null ? String(userSettings.filtering.maxSizeEpisodeGb) : merged.filtering.maxSizeEpisodeGb,
+          maxSizeMovieGb:
+            userSettings.filtering?.maxSizeMovieGb != null
+              ? String(userSettings.filtering.maxSizeMovieGb)
+              : merged.filtering.maxSizeMovieGb,
+          maxSizeEpisodeGb:
+            userSettings.filtering?.maxSizeEpisodeGb != null
+              ? String(userSettings.filtering.maxSizeEpisodeGb)
+              : merged.filtering.maxSizeEpisodeGb,
           excludeHdr: userSettings.filtering?.excludeHdr ?? merged.filtering.excludeHdr,
           prioritizeHdr: userSettings.filtering?.prioritizeHdr ?? merged.filtering.prioritizeHdr,
           filterOutTerms: userSettings.filtering?.filterOutTerms?.join(', ') ?? merged.filtering.filterOutTerms,
@@ -1032,12 +1140,13 @@ function SettingsScreen() {
             useLoadingScreen: editableSettings.playback?.useLoadingScreen ?? false,
           },
           homeShelves: {
-            shelves: editableSettings.homeShelves?.shelves?.map((s) => ({
-              id: s.id,
-              name: s.name,
-              enabled: s.enabled,
-              order: s.order,
-            })) ?? [],
+            shelves:
+              editableSettings.homeShelves?.shelves?.map((s) => ({
+                id: s.id,
+                name: s.name,
+                enabled: s.enabled,
+                order: s.order,
+              })) ?? [],
             trendingMovieSource: editableSettings.homeShelves?.trendingMovieSource,
           },
           filtering: {
@@ -1133,21 +1242,31 @@ function SettingsScreen() {
       const message = err instanceof Error ? err.message : 'Failed to update backend settings';
       showToast(message, { tone: 'danger' });
     }
-  }, [activeTab, activeUserId, clearErrors, editableSettings, isPerUserTab, settings, showToast, updateBackendSettings, updateUserSettings]);
+  }, [
+    activeTab,
+    activeUserId,
+    clearErrors,
+    editableSettings,
+    isPerUserTab,
+    settings,
+    showToast,
+    updateBackendSettings,
+    updateUserSettings,
+  ]);
 
-  const updateServerField = useCallback(
+  const _updateServerField = useCallback(
     (field: keyof EditableBackendSettings['server']) => (value: string) => {
       setDirty(true);
       clearFieldError(`server.${field}`);
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            server: {
-              ...current.server,
-              [field]: value,
-            },
-          }
+              ...current,
+              server: {
+                ...current.server,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
@@ -1164,9 +1283,9 @@ function SettingsScreen() {
         const nextProviders = current.usenet.map((existing, idx) =>
           idx === index
             ? {
-              ...existing,
-              [field]: value,
-            }
+                ...existing,
+                [field]: value,
+              }
             : existing,
         );
         return {
@@ -1213,12 +1332,12 @@ function SettingsScreen() {
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            metadata: {
-              ...current.metadata,
-              [field]: value,
-            },
-          }
+              ...current,
+              metadata: {
+                ...current.metadata,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
@@ -1232,12 +1351,12 @@ function SettingsScreen() {
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            streaming: {
-              ...current.streaming,
-              [field]: value,
-            },
-          }
+              ...current,
+              streaming: {
+                ...current.streaming,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
@@ -1249,12 +1368,12 @@ function SettingsScreen() {
     setEditableSettings((current) =>
       current
         ? {
-          ...current,
-          streaming: {
-            ...current.streaming,
-            serviceMode: mode,
-          },
-        }
+            ...current,
+            streaming: {
+              ...current.streaming,
+              serviceMode: mode,
+            },
+          }
         : current,
     );
   }, []);
@@ -1264,12 +1383,12 @@ function SettingsScreen() {
     setEditableSettings((current) =>
       current
         ? {
-          ...current,
-          streaming: {
-            ...current.streaming,
-            servicePriority: priority,
-          },
-        }
+            ...current,
+            streaming: {
+              ...current.streaming,
+              servicePriority: priority,
+            },
+          }
         : current,
     );
   }, []);
@@ -1338,55 +1457,55 @@ function SettingsScreen() {
     });
   }, []);
 
-  const updateCacheField = useCallback(
+  const _updateCacheField = useCallback(
     (field: keyof EditableBackendSettings['cache']) => (value: string) => {
       setDirty(true);
       clearFieldError(`cache.${field}`);
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            cache: {
-              ...current.cache,
-              [field]: value,
-            },
-          }
+              ...current,
+              cache: {
+                ...current.cache,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
     [clearFieldError],
   );
 
-  const updateWebDavField = useCallback(
+  const _updateWebDavField = useCallback(
     (field: keyof EditableBackendSettings['webdav']) => (value: string | boolean) => {
       setDirty(true);
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            webdav: {
-              ...current.webdav,
-              [field]: value,
-            },
-          }
+              ...current,
+              webdav: {
+                ...current.webdav,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
     [],
   );
 
-  const updateTransmuxField = useCallback(
+  const _updateTransmuxField = useCallback(
     (field: keyof EditableBackendSettings['transmux']) => (value: string | boolean) => {
       setDirty(true);
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            transmux: {
-              ...current.transmux,
-              [field]: value,
-            },
-          }
+              ...current,
+              transmux: {
+                ...current.transmux,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
@@ -1398,12 +1517,12 @@ function SettingsScreen() {
     setEditableSettings((current) =>
       current
         ? {
-          ...current,
-          playback: {
-            ...current.playback,
-            preferredPlayer: value,
-          },
-        }
+            ...current,
+            playback: {
+              ...current.playback,
+              preferredPlayer: value,
+            },
+          }
         : current,
     );
   }, []);
@@ -1414,30 +1533,30 @@ function SettingsScreen() {
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            playback: {
-              ...current.playback,
-              [field]: value,
-            },
-          }
+              ...current,
+              playback: {
+                ...current.playback,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
     [],
   );
 
-  const updateLiveField = useCallback(
+  const _updateLiveField = useCallback(
     (field: keyof EditableBackendSettings['live']) => (value: string) => {
       setDirty(true);
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            live: {
-              ...current.live,
-              [field]: value,
-            },
-          }
+              ...current,
+              live: {
+                ...current.live,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
@@ -1450,12 +1569,12 @@ function SettingsScreen() {
       setEditableSettings((current) =>
         current
           ? {
-            ...current,
-            filtering: {
-              ...current.filtering,
-              [field]: value,
-            },
-          }
+              ...current,
+              filtering: {
+                ...current.filtering,
+                [field]: value,
+              },
+            }
           : current,
       );
     },
@@ -1499,42 +1618,60 @@ function SettingsScreen() {
     );
   }, []);
 
-  const moveShelfUp = useCallback((index: number) => {
-    if (index === 0) {
-      return;
-    }
-    setDirty(true);
-    setEditableSettings((current) => {
-      if (!current) {
-        return current;
-      }
-      const shelves = [...current.homeShelves.shelves];
-      const temp = shelves[index - 1];
-      shelves[index - 1] = { ...shelves[index], order: index - 1 };
-      shelves[index] = { ...temp, order: index };
-      return {
-        ...current,
-        homeShelves: { ...current.homeShelves, shelves },
-      };
-    });
+  const triggerShelfPulse = useCallback((primaryId: string, secondaryId: string) => {
+    setShelfPulses((prev) => ({
+      ...prev,
+      [primaryId]: { key: (prev[primaryId]?.key || 0) + 1, intensity: 'primary' },
+      [secondaryId]: { key: (prev[secondaryId]?.key || 0) + 1, intensity: 'secondary' },
+    }));
   }, []);
 
-  const moveShelfDown = useCallback((index: number) => {
-    setDirty(true);
-    setEditableSettings((current) => {
-      if (!current || index >= current.homeShelves.shelves.length - 1) {
-        return current;
+  const moveShelfUp = useCallback(
+    (index: number) => {
+      if (index === 0) {
+        return;
       }
-      const shelves = [...current.homeShelves.shelves];
-      const temp = shelves[index + 1];
-      shelves[index + 1] = { ...shelves[index], order: index + 1 };
-      shelves[index] = { ...temp, order: index };
-      return {
-        ...current,
-        homeShelves: { ...current.homeShelves, shelves },
-      };
-    });
-  }, []);
+      setEditableSettings((current) => {
+        if (!current) {
+          return current;
+        }
+        const shelves = [...current.homeShelves.shelves];
+        const movedShelf = shelves[index];
+        const displacedShelf = shelves[index - 1];
+        shelves[index - 1] = { ...movedShelf, order: index - 1 };
+        shelves[index] = { ...displacedShelf, order: index };
+        triggerShelfPulse(movedShelf.id, displacedShelf.id);
+        return {
+          ...current,
+          homeShelves: { ...current.homeShelves, shelves },
+        };
+      });
+      setDirty(true);
+    },
+    [triggerShelfPulse],
+  );
+
+  const moveShelfDown = useCallback(
+    (index: number) => {
+      setEditableSettings((current) => {
+        if (!current || index >= current.homeShelves.shelves.length - 1) {
+          return current;
+        }
+        const shelves = [...current.homeShelves.shelves];
+        const movedShelf = shelves[index];
+        const displacedShelf = shelves[index + 1];
+        shelves[index + 1] = { ...movedShelf, order: index + 1 };
+        shelves[index] = { ...displacedShelf, order: index };
+        triggerShelfPulse(movedShelf.id, displacedShelf.id);
+        return {
+          ...current,
+          homeShelves: { ...current.homeShelves, shelves },
+        };
+      });
+      setDirty(true);
+    },
+    [triggerShelfPulse],
+  );
 
   const updateIndexer = useCallback((index: number, field: keyof EditableIndexer, value: string | boolean) => {
     setDirty(true);
@@ -1545,9 +1682,9 @@ function SettingsScreen() {
       const nextIndexers = current.indexers.map((existing, idx) =>
         idx === index
           ? {
-            ...existing,
-            [field]: value,
-          }
+              ...existing,
+              [field]: value,
+            }
           : existing,
       );
       return {
@@ -1593,9 +1730,9 @@ function SettingsScreen() {
         const nextScrapers = current.torrentScrapers.map((existing, idx) =>
           idx === index
             ? {
-              ...existing,
-              [field]: value,
-            }
+                ...existing,
+                [field]: value,
+              }
             : existing,
         );
         return {
@@ -1835,7 +1972,8 @@ function SettingsScreen() {
         type: 'header',
         id: 'connection-header',
         title: 'Backend Connection',
-        description: 'Enter the backend URL and the 6-digit PIN shown when the backend starts. Make sure to append /api to the URL.',
+        description:
+          'Enter the backend URL and the 6-digit PIN shown when the backend starts. Make sure to append /api to the URL.',
       },
       {
         type: 'text-field',
@@ -1872,25 +2010,28 @@ function SettingsScreen() {
         type: 'header',
         id: 'playback-player-header',
         title: 'Player Preference',
-        description: 'Choose which video player to use for playback. Native uses the built-in player, or select an external app.',
+        description:
+          'Choose which video player to use for playback. Native uses the built-in player, or select an external app.',
       },
       {
         type: 'dropdown',
         id: 'playback-player',
         label: 'Video Player',
         value: editableSettings.playback.preferredPlayer || 'native',
-        options: [
-          { label: 'Native', value: 'native' },
-          { label: 'Outplayer', value: 'outplayer' },
-          { label: 'Infuse', value: 'infuse' },
-        ],
+        options:
+          Platform.OS === 'android'
+            ? [{ label: 'Native', value: 'native' }]
+            : [
+                { label: 'Native', value: 'native' },
+                { label: 'Infuse', value: 'infuse' },
+              ],
         fieldKey: 'playback.preferredPlayer',
       },
       {
         type: 'header',
         id: 'playback-lang-header',
         title: 'Audio & Subtitle Preferences',
-        description: 'Set your preferred languages using ISO 639-1 codes (e.g., "en" for English, "es" for Spanish).',
+        description: 'Set your preferred languages using ISO 639-2 codes (e.g., "eng" for English, "spa" for Spanish).',
       },
       {
         type: 'text-field',
@@ -1898,7 +2039,7 @@ function SettingsScreen() {
         label: 'Audio Language',
         value: editableSettings.playback.preferredAudioLanguage || '',
         fieldKey: 'playback.preferredAudioLanguage',
-        options: { placeholder: 'en' },
+        options: { placeholder: 'eng' },
       },
       {
         type: 'text-field',
@@ -1906,7 +2047,7 @@ function SettingsScreen() {
         label: 'Subtitle Language',
         value: editableSettings.playback.preferredSubtitleLanguage || '',
         fieldKey: 'playback.preferredSubtitleLanguage',
-        options: { placeholder: 'en' },
+        options: { placeholder: 'eng' },
       },
       {
         type: 'dropdown',
@@ -1924,7 +2065,7 @@ function SettingsScreen() {
         type: 'header',
         id: 'playback-loading-header',
         title: 'Loading Screen',
-        description: 'Display a themed loading screen with title information while content buffers.',
+        description: 'Display a themed loading screen while content buffers.',
       },
       {
         type: 'toggle',
@@ -1957,6 +2098,7 @@ function SettingsScreen() {
         type: 'header',
         id: 'filtering-size-header',
         title: 'Size Limits',
+        description: 'Set maximum file sizes for movies and episodes. Use 0 for no limit.',
       },
       {
         type: 'text-field',
@@ -1964,7 +2106,7 @@ function SettingsScreen() {
         label: 'Max Movie Size (GB)',
         value: editableSettings.filtering.maxSizeMovieGb || '',
         fieldKey: 'filtering.maxSizeMovieGb',
-        options: { keyboardType: 'numeric', placeholder: '100' },
+        options: { keyboardType: 'numeric', placeholder: '0' },
       },
       {
         type: 'text-field',
@@ -1972,12 +2114,13 @@ function SettingsScreen() {
         label: 'Max Episode Size (GB)',
         value: editableSettings.filtering.maxSizeEpisodeGb || '',
         fieldKey: 'filtering.maxSizeEpisodeGb',
-        options: { keyboardType: 'numeric', placeholder: '20' },
+        options: { keyboardType: 'numeric', placeholder: '0' },
       },
       {
         type: 'header',
         id: 'filtering-quality-header',
         title: 'Quality Filters',
+        description: 'Control which releases appear in search results based on quality and keywords.',
       },
       {
         type: 'toggle',
@@ -1993,21 +2136,20 @@ function SettingsScreen() {
         label: 'Filter Out Terms',
         value: editableSettings.filtering.filterOutTerms || '',
         fieldKey: 'filtering.filterOutTerms',
-        options: { placeholder: 'cam, screener, telesync', multiline: true },
+        options: { placeholder: 'cam, screener, telesync' },
       },
       {
         type: 'header',
         id: 'filtering-unplayable-header',
         title: 'Unplayable Releases',
+        description: 'Manage releases that failed to play and were marked as unplayable.',
       },
       {
         type: 'button-row',
         id: 'filtering-unplayable-buttons',
         buttons: [
           { label: `Manage (${unplayableReleases.length})`, action: 'manage-unplayable' },
-          ...(unplayableReleases.length > 0
-            ? [{ label: 'Clear All', action: 'clear-unplayable' }]
-            : []),
+          ...(unplayableReleases.length > 0 ? [{ label: 'Clear All', action: 'clear-unplayable' }] : []),
         ],
       },
       {
@@ -2035,6 +2177,7 @@ function SettingsScreen() {
       items.push({
         type: 'shelf-item',
         id: `shelf-${shelf.id}`,
+        key: `shelf-${shelf.id}`,
         shelf,
         index,
         total: editableSettings.homeShelves.shelves.length,
@@ -2169,7 +2312,13 @@ function SettingsScreen() {
       switch (item.type) {
         case 'header': {
           // Only wrap topmost headers (first header of each tab) with focusable view for scroll
-          const topmostHeaders = ['connection-header', 'playback-player-header', 'filtering-size-header', 'home-shelves-header', 'live-hidden-header'];
+          const topmostHeaders = [
+            'connection-header',
+            'playback-player-header',
+            'filtering-size-header',
+            'home-shelves-header',
+            'live-hidden-header',
+          ];
           const isTopmost = topmostHeaders.includes(item.id);
 
           const headerContent = (
@@ -2193,17 +2342,20 @@ function SettingsScreen() {
 
         case 'text-field': {
           // Inline text input configuration for supported fields
-          const inlineFieldConfig: Record<string, {
-            inputRef: React.RefObject<TextInput | null>;
-            tempRef: React.MutableRefObject<string>;
-            setValue: (value: string) => void;
-          }> = {
-            'backendUrl': {
+          const inlineFieldConfig: Record<
+            string,
+            {
+              inputRef: React.RefObject<TextInput | null>;
+              tempRef: React.MutableRefObject<string>;
+              setValue: (value: string) => void;
+            }
+          > = {
+            backendUrl: {
               inputRef: backendUrlInputRef,
               tempRef: tempBackendUrlRef,
               setValue: setBackendUrlInput,
             },
-            'backendApiKey': {
+            backendApiKey: {
               inputRef: backendPinInputRef,
               tempRef: tempBackendPinRef,
               setValue: setBackendApiKeyInput,
@@ -2229,6 +2381,58 @@ function SettingsScreen() {
                   setEditableSettings({
                     ...editableSettings,
                     playback: { ...editableSettings.playback, preferredSubtitleLanguage: value },
+                  });
+                  setDirty(true);
+                }
+              },
+            },
+            'live.playlistUrl': {
+              inputRef: playlistUrlInputRef,
+              tempRef: tempPlaylistUrlRef,
+              setValue: (value: string) => {
+                if (editableSettings) {
+                  setEditableSettings({
+                    ...editableSettings,
+                    live: { ...editableSettings.live, playlistUrl: value },
+                  });
+                  setDirty(true);
+                }
+              },
+            },
+            'filtering.maxSizeMovieGb': {
+              inputRef: maxMovieSizeInputRef,
+              tempRef: tempMaxMovieSizeRef,
+              setValue: (value: string) => {
+                if (editableSettings) {
+                  setEditableSettings({
+                    ...editableSettings,
+                    filtering: { ...editableSettings.filtering, maxSizeMovieGb: value },
+                  });
+                  setDirty(true);
+                }
+              },
+            },
+            'filtering.maxSizeEpisodeGb': {
+              inputRef: maxEpisodeSizeInputRef,
+              tempRef: tempMaxEpisodeSizeRef,
+              setValue: (value: string) => {
+                if (editableSettings) {
+                  setEditableSettings({
+                    ...editableSettings,
+                    filtering: { ...editableSettings.filtering, maxSizeEpisodeGb: value },
+                  });
+                  setDirty(true);
+                }
+              },
+            },
+            'filtering.filterOutTerms': {
+              inputRef: filterTermsInputRef,
+              tempRef: tempFilterTermsRef,
+              setValue: (value: string) => {
+                if (editableSettings) {
+                  setEditableSettings({
+                    ...editableSettings,
+                    filtering: { ...editableSettings.filtering, filterOutTerms: value },
                   });
                   setDirty(true);
                 }
@@ -2279,10 +2483,7 @@ function SettingsScreen() {
                       <Text style={styles.tvGridInlineInputLabel}>{item.label}</Text>
                       <TextInput
                         ref={inputRef}
-                        style={[
-                          styles.tvGridInlineInput,
-                          isFocused && styles.tvGridInlineInputFocused,
-                        ]}
+                        style={[styles.tvGridInlineInput, isFocused && styles.tvGridInlineInputFocused]}
                         {...(Platform.isTV ? { defaultValue: item.value } : { value: item.value })}
                         onChangeText={handleInlineChangeText}
                         onFocus={handleInlineFocus}
@@ -2302,8 +2503,8 @@ function SettingsScreen() {
                         disableFullscreenUI={true}
                         {...(Platform.OS === 'ios' &&
                           Platform.isTV && {
-                          keyboardAppearance: 'dark',
-                        })}
+                            keyboardAppearance: 'dark',
+                          })}
                       />
                     </View>
                   </Pressable>
@@ -2341,13 +2542,22 @@ function SettingsScreen() {
               {({ isFocused }: { isFocused: boolean }) => (
                 <View style={[styles.tvGridToggleRow, isFocused && styles.tvGridToggleRowFocused]}>
                   <Text style={styles.tvGridToggleLabelText}>{item.label}</Text>
-                  <Switch
-                    value={item.value}
-                    onValueChange={(v) => handleGridFieldUpdate(item.fieldKey, v)}
-                    trackColor={{ false: theme.colors.background.elevated, true: theme.colors.accent.primary }}
-                    thumbColor={theme.colors.text.inverse}
-                    style={isFocused ? styles.tvGridToggleSwitchFocused : undefined}
-                  />
+                  <View
+                    style={[
+                      styles.tvGridCustomToggle,
+                      {
+                        backgroundColor: item.value ? theme.colors.accent.primary : theme.colors.border.emphasis,
+                      },
+                      isFocused && {
+                        transform: [{ scale: 1.1 }],
+                        borderWidth: 2,
+                        borderColor: theme.colors.text.primary,
+                      },
+                    ]}>
+                    <View
+                      style={[styles.tvGridCustomToggleThumb, { alignSelf: item.value ? 'flex-end' : 'flex-start' }]}
+                    />
+                  </View>
                 </View>
               )}
             </SpatialNavigationFocusableView>
@@ -2407,7 +2617,10 @@ function SettingsScreen() {
         case 'shelf-item': {
           const { shelf, index, total } = item;
           return (
-            <View style={[styles.tvGridItemFullWidth, styles.tvGridItemSpacing]}>
+            <AnimatedShelfItem
+              pulseKey={shelfPulses[shelf.id]?.key || 0}
+              pulseIntensity={shelfPulses[shelf.id]?.intensity || 'primary'}
+              style={[styles.tvGridItemFullWidth, styles.tvGridItemSpacing]}>
               <SpatialNavigationNode orientation="horizontal">
                 <View style={[styles.tvGridFieldRow, { opacity: shelf.enabled ? 1 : 0.6 }]}>
                   <Text style={styles.tvGridFieldLabel}>{shelf.name}</Text>
@@ -2437,7 +2650,7 @@ function SettingsScreen() {
                   </View>
                 </View>
               </SpatialNavigationNode>
-            </View>
+            </AnimatedShelfItem>
           );
         }
 
@@ -2445,694 +2658,727 @@ function SettingsScreen() {
           return null;
       }
     },
-    [styles, theme, openTextInputModal, handleGridFieldUpdate, handleGridAction, moveShelfUp, moveShelfDown, updateShelf, setActiveTab, lockNavigation, unlockNavigation, activeInlineInput, setBackendUrlInput, setBackendApiKeyInput, editableSettings, setDirty],
+    [
+      styles,
+      theme,
+      openTextInputModal,
+      handleGridFieldUpdate,
+      handleGridAction,
+      moveShelfUp,
+      moveShelfDown,
+      updateShelf,
+      setActiveTab,
+      lockNavigation,
+      unlockNavigation,
+      activeInlineInput,
+      setBackendUrlInput,
+      setBackendApiKeyInput,
+      editableSettings,
+      setDirty,
+      shelfPulses,
+    ],
   );
 
   return (
     <>
-    <SpatialNavigationRoot isActive={isActive} onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <FixedSafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* TV Layout: Header at top, then grid below */}
-        {Platform.isTV && (
-          <View style={styles.tvLayoutContainer}>
-            {/* Header Section - at top of screen */}
-            <View style={styles.tvHeader}>
-              <Text style={styles.tvScreenTitle}>Settings</Text>
-              <SpatialNavigationNode orientation="horizontal">
-                <View style={styles.tvTabBar}>
-                  {tabs.map((tab) => {
-                    const requiresBackend = ['playback', 'home', 'filtering', 'live'].includes(tab.key);
-                    const isDisabled = requiresBackend && !isBackendReachable;
-                    const isActiveTab = activeTab === tab.key;
-                    const tabButton = (
-                      <FocusablePressable
-                        key={tab.key}
-                        text={tab.label}
-                        onSelect={() => setActiveTab(tab.key)}
-                        style={[styles.tvTabButton, isActiveTab && styles.tvTabButtonActive]}
-                        disabled={isDisabled}
-                      />
-                    );
-                    if (tab.key === 'connection') {
-                      return <DefaultFocus key={tab.key}>{tabButton}</DefaultFocus>;
-                    }
-                    return tabButton;
-                  })}
-                </View>
-              </SpatialNavigationNode>
-            </View>
-
-            {/* Grid Content - with edge buffer */}
-            <View style={styles.tvContentArea}>
-              {currentTabGridData.length > 0 && (
-                <View style={styles.tvGridContainer}>
-                  <SpatialNavigationVirtualizedGrid
-                    data={currentTabGridData}
-                    renderItem={renderGridItem}
-                    numberOfColumns={1}
-                    itemHeight={(styles.tvGridItemHeight as { height: number }).height}
-                    numberOfRenderedRows={Math.max(currentTabGridData.length, 10)}
-                    numberOfRowsVisibleOnScreen={Math.min(8, currentTabGridData.length)}
-                    rowContainerStyle={styles.tvGridRowContainer}
-                  />
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-        {/* Mobile Layout: ScrollView with all content */}
-        {!Platform.isTV && (
-        <View style={styles.mobileContainer}>
-        <SpatialNavigationScrollView
-          style={styles.container}
-          contentContainerStyle={styles.contentContainer}
-          contentInsetAdjustmentBehavior="never"
-          automaticallyAdjustContentInsets={false}>
-          <Text style={styles.screenTitle}>Settings</Text>
-
-          {/* Tab Bar */}
-          <SpatialNavigationNode orientation="horizontal">
-            <View style={styles.tabBar}>
-              {tabs.map((tab) => {
-                const requiresBackend = ['playback', 'home', 'filtering', 'live'].includes(tab.key);
-                const isDisabled = requiresBackend && !isBackendReachable;
-                const tabButton = (
-                  <FocusablePressable
-                    key={tab.key}
-                    text={tab.label}
-                    onSelect={() => setActiveTab(tab.key)}
-                    style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-                    disabled={isDisabled}
-                  />
-                );
-                // Set default focus to Backend tab on TV
-                if (tab.key === 'connection' && Platform.isTV) {
-                  return <DefaultFocus key={tab.key}>{tabButton}</DefaultFocus>;
-                }
-                return tabButton;
-              })}
-            </View>
-          </SpatialNavigationNode>
-
-          {/* Mobile Tab Content */}
-          {/* Connection Tab */}
-          {!Platform.isTV && activeTab === 'connection' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Backend Connection</Text>
-              <Text style={styles.sectionDescription}>
-                Enter the backend URL and the 6-digit PIN shown when the backend starts. Make sure to append /api
-                to the URL.
-              </Text>
-              <TextInputField
-                label="Backend URL"
-                value={backendUrlInput}
-                onChange={setBackendUrlInput}
-                options={{ placeholder: 'http://localhost:7777/api' }}
-                styles={styles}
-              />
-              <TextInputField
-                label="API PIN (6 digits)"
-                value={backendApiKeyInput}
-                onChange={setBackendApiKeyInput}
-                options={{ secureTextEntry: false, placeholder: '123456', keyboardType: 'numeric' }}
-                styles={styles}
-              />
-              <SpatialNavigationNode orientation="horizontal">
-                <View style={styles.buttonRow}>
-                  <FocusablePressable text="Apply" onSelect={handleBackendConnectionApply} disabled={!isReady} />
-                  <FocusablePressable
-                    text="Reload"
-                    onSelect={handleReloadSettings}
-                    disabled={!isReady || busy}
-                    style={styles.secondaryButton}
-                  />
-                </View>
-              </SpatialNavigationNode>
-              {error && <Text style={[styles.statusText, styles.statusError]}>{error}</Text>}
-            </View>
-          )}
-
-          {/* Content Sources Tab */}
-          {!Platform.isTV && activeTab === 'content' && editableSettings && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Streaming Mode</Text>
-                <Text style={styles.sectionDescription}>
-                  Choose which streaming services to use when resolving content.
-                </Text>
+      <SpatialNavigationRoot isActive={isActive} onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <FixedSafeAreaView style={styles.safeArea} edges={['top']}>
+          {/* TV Layout: Header at top, then grid below */}
+          {Platform.isTV && (
+            <View style={styles.tvLayoutContainer}>
+              {/* Header Section - at top of screen */}
+              <View style={styles.tvHeader}>
+                <Text style={styles.tvScreenTitle}>Settings</Text>
                 <SpatialNavigationNode orientation="horizontal">
-                  <View style={styles.playbackOptionsRow}>
-                    {streamingModeOptions.map((option) => {
-                      const isSelected = editableSettings?.streaming?.serviceMode === option.value;
-                      return (
+                  <View style={styles.tvTabBar}>
+                    {tabs.map((tab) => {
+                      const requiresBackend = ['playback', 'home', 'filtering', 'live'].includes(tab.key);
+                      const isDisabled = requiresBackend && !isBackendReachable;
+                      const isActiveTab = activeTab === tab.key;
+                      const tabButton = (
                         <FocusablePressable
-                          key={option.value}
-                          text={option.label}
-                          onSelect={() => updateStreamingServiceMode(option.value)}
-                          style={[styles.playbackOption, isSelected && styles.playbackOptionSelected]}
-                          disabled={!editableSettings}
+                          key={tab.key}
+                          text={tab.label}
+                          onSelect={() => setActiveTab(tab.key)}
+                          style={[styles.tvTabButton, isActiveTab && styles.tvTabButtonActive]}
+                          disabled={isDisabled}
                         />
                       );
-                    })}
-                  </View>
-                </SpatialNavigationNode>
-                <View style={{ marginTop: 16 }}>
-                  <DropdownField
-                    label="Service Priority"
-                    value={editableSettings.streaming.servicePriority}
-                    options={servicePriorityOptions}
-                    onChange={(val) => updateStreamingServicePriority(val as StreamingServicePriority)}
-                    styles={styles}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Usenet Providers</Text>
-                  <FocusablePressable text="Add" onSelect={handleAddUsenetProvider} />
-                </View>
-                {editableSettings.usenet.length === 0 && (
-                  <Text style={styles.sectionDescription}>No usenet providers configured yet.</Text>
-                )}
-                {editableSettings.usenet.map((provider, index) => renderUsenetProvider(provider, index))}
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Indexers</Text>
-                  <FocusablePressable text="Add" onSelect={handleAddIndexer} />
-                </View>
-                {editableSettings.indexers.length === 0 && (
-                  <Text style={styles.sectionDescription}>No indexers configured yet.</Text>
-                )}
-                {editableSettings.indexers.map((indexer, index) => renderIndexer(indexer, index))}
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Debrid Providers</Text>
-                  <FocusablePressable text="Add" onSelect={handleAddDebridProvider} />
-                </View>
-                {(editableSettings?.streaming?.debridProviders?.length ?? 0) === 0 && (
-                  <Text style={styles.sectionDescription}>No debrid providers configured yet.</Text>
-                )}
-                {(editableSettings?.streaming?.debridProviders ?? []).map((provider, index) =>
-                  renderDebridProvider(provider, index),
-                )}
-              </View>
-
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Scrapers</Text>
-                  <FocusablePressable text="Add" onSelect={handleAddTorrentScraper} />
-                </View>
-                <Text style={styles.sectionDescription}>
-                  Configure torrent search providers. Torrentio is enabled by default and requires no configuration.
-                </Text>
-                {editableSettings.torrentScrapers.length === 0 && (
-                  <Text style={styles.sectionDescription}>No torrent scrapers configured yet.</Text>
-                )}
-                {editableSettings.torrentScrapers.map((scraper, index) => renderTorrentScraper(scraper, index))}
-              </View>
-            </>
-          )}
-
-          {/* Playback Tab */}
-          {!Platform.isTV && activeTab === 'playback' && editableSettings && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Player Preference</Text>
-              <Text style={styles.sectionDescription}>
-                Choose which player to launch after resolving a search result.
-              </Text>
-                <SpatialNavigationNode orientation="horizontal">
-                  <View style={styles.playbackOptionsRow}>
-                    {playbackOptions.map((option) => {
-                      const isSelected = editableSettings.playback.preferredPlayer === option.value;
-                      return (
-                        <FocusablePressable
-                          key={option.value}
-                          text={option.label}
-                          onSelect={() => updatePlaybackMode(option.value)}
-                          style={[styles.playbackOption, isSelected && styles.playbackOptionSelected]}
-                        />
-                      );
+                      if (tab.key === 'connection') {
+                        return <DefaultFocus key={tab.key}>{tabButton}</DefaultFocus>;
+                      }
+                      return tabButton;
                     })}
                   </View>
                 </SpatialNavigationNode>
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Audio & Subtitle Preferences</Text>
-                <Text style={styles.sectionDescription}>
-                  Set default audio and subtitle track preferences. Use 3-letter language codes (e.g., eng, spa, fra) or
-                  full names.
-                </Text>
-                <TextInputField
-                  label="Preferred Audio Language"
-                  value={editableSettings.playback?.preferredAudioLanguage ?? ''}
-                  onChange={updatePlaybackField('preferredAudioLanguage')}
-                  options={{ placeholder: 'e.g., eng, English' }}
-                  styles={styles}
-                />
-                <TextInputField
-                  label="Preferred Subtitle Language"
-                  value={editableSettings.playback?.preferredSubtitleLanguage ?? ''}
-                  onChange={updatePlaybackField('preferredSubtitleLanguage')}
-                  options={{ placeholder: 'e.g., eng, English' }}
-                  styles={styles}
-                />
-                <DropdownField
-                  label="Subtitle Mode"
-                  value={editableSettings.playback?.preferredSubtitleMode ?? 'off'}
-                  options={[
-                    { label: 'Off', value: 'off' },
-                    { label: 'On', value: 'on' },
-                    { label: 'Forced Only', value: 'forced-only' },
-                  ]}
-                  onChange={(value) => updatePlaybackField('preferredSubtitleMode')(value)}
-                  styles={styles}
-                />
+              {/* Grid Content - with edge buffer */}
+              <View style={styles.tvContentArea}>
+                {currentTabGridData.length > 0 && (
+                  <View style={styles.tvGridContainer}>
+                    <SpatialNavigationVirtualizedGrid
+                      data={currentTabGridData}
+                      renderItem={renderGridItem}
+                      numberOfColumns={1}
+                      itemHeight={(styles.tvGridItemHeight as { height: number }).height}
+                      numberOfRenderedRows={Math.max(currentTabGridData.length, 10)}
+                      numberOfRowsVisibleOnScreen={Math.min(8, currentTabGridData.length)}
+                      rowContainerStyle={styles.tvGridRowContainer}
+                    />
+                  </View>
+                )}
               </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Loading Screen</Text>
-                <Text style={styles.sectionDescription}>
-                  Enable the custom loading screen during playback initialization.
-                </Text>
-                <View style={styles.fieldRow}>
-                  <Text style={styles.fieldLabel}>Use Loading Screen</Text>
-                  <Switch
-                    value={editableSettings.playback?.useLoadingScreen ?? false}
-                    onValueChange={(next) => {
-                      setDirty(true);
-                      setEditableSettings((current) =>
-                        current
-                          ? {
-                            ...current,
-                            playback: {
-                              ...current.playback,
-                              useLoadingScreen: next,
-                            },
-                          }
-                          : current,
-                      );
-                    }}
-                    trackColor={{ true: theme.colors.accent.primary, false: theme.colors.border.subtle }}
-                    thumbColor="#FFFFFF"
-                  />
-                </View>
-                <FocusablePressable
-                  text="Preview Loading Screen"
-                  onSelect={() => router.push('/strmr-loading')}
-                  style={styles.secondaryButton}
-                />
-              </View>
-            </>
+            </View>
           )}
+          {/* Mobile Layout: ScrollView with all content */}
+          {!Platform.isTV && (
+            <View style={styles.mobileContainer}>
+              <SpatialNavigationScrollView
+                style={styles.container}
+                contentContainerStyle={styles.contentContainer}
+                contentInsetAdjustmentBehavior="never"
+                automaticallyAdjustContentInsets={false}>
+                <Text style={styles.screenTitle}>Settings</Text>
 
-          {/* Home Screen Tab */}
-          {!Platform.isTV && activeTab === 'home' && editableSettings && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Home Screen Shelves</Text>
-                <Text style={styles.sectionDescription}>
-                  Control which content shelves appear on your home screen and their order. Disabled shelves will be
-                  hidden.
-                </Text>
-                {editableSettings.homeShelves.shelves.map((shelf, index) => (
-                  <Animated.View
-                    key={shelf.id}
-                    layout={Layout.springify().damping(45).stiffness(250)}
-                    style={[styles.indexerCard, styles.shelfCard, !shelf.enabled && styles.shelfCardDisabled]}>
-                    <View style={styles.shelfManagementRow}>
-                      <View style={styles.shelfInfo}>
-                        <Text style={[styles.shelfName, !shelf.enabled && styles.shelfNameDisabled]}>{shelf.name}</Text>
+                {/* Tab Bar */}
+                <SpatialNavigationNode orientation="horizontal">
+                  <View style={styles.tabBar}>
+                    {tabs.map((tab) => {
+                      const requiresBackend = ['playback', 'home', 'filtering', 'live'].includes(tab.key);
+                      const isDisabled = requiresBackend && !isBackendReachable;
+                      const tabButton = (
+                        <FocusablePressable
+                          key={tab.key}
+                          text={tab.label}
+                          onSelect={() => setActiveTab(tab.key)}
+                          style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+                          disabled={isDisabled}
+                        />
+                      );
+                      // Set default focus to Backend tab on TV
+                      if (tab.key === 'connection' && Platform.isTV) {
+                        return <DefaultFocus key={tab.key}>{tabButton}</DefaultFocus>;
+                      }
+                      return tabButton;
+                    })}
+                  </View>
+                </SpatialNavigationNode>
+
+                {/* Mobile Tab Content */}
+                {/* Connection Tab */}
+                {!Platform.isTV && activeTab === 'connection' && (
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Backend Connection</Text>
+                    <Text style={styles.sectionDescription}>
+                      Enter the backend URL and the 6-digit PIN shown when the backend starts. Make sure to append /api
+                      to the URL.
+                    </Text>
+                    <TextInputField
+                      label="Backend URL"
+                      value={backendUrlInput}
+                      onChange={setBackendUrlInput}
+                      options={{ placeholder: 'http://localhost:7777/api' }}
+                      styles={styles}
+                    />
+                    <TextInputField
+                      label="API PIN (6 digits)"
+                      value={backendApiKeyInput}
+                      onChange={setBackendApiKeyInput}
+                      options={{ secureTextEntry: false, placeholder: '123456', keyboardType: 'numeric' }}
+                      styles={styles}
+                    />
+                    <SpatialNavigationNode orientation="horizontal">
+                      <View style={styles.buttonRow}>
+                        <FocusablePressable text="Apply" onSelect={handleBackendConnectionApply} disabled={!isReady} />
+                        <FocusablePressable
+                          text="Reload"
+                          onSelect={handleReloadSettings}
+                          disabled={!isReady || busy}
+                          style={styles.secondaryButton}
+                        />
                       </View>
+                    </SpatialNavigationNode>
+                    {error && <Text style={[styles.statusText, styles.statusError]}>{error}</Text>}
+                  </View>
+                )}
+
+                {/* Content Sources Tab */}
+                {!Platform.isTV && activeTab === 'content' && editableSettings && (
+                  <>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Streaming Mode</Text>
+                      <Text style={styles.sectionDescription}>
+                        Choose which streaming services to use when resolving content.
+                      </Text>
                       <SpatialNavigationNode orientation="horizontal">
-                        <View style={styles.shelfControls}>
-                          <FocusablePressable
-                            text="↑"
-                            onSelect={() => moveShelfUp(index)}
-                            disabled={index === 0}
-                            style={[styles.shelfArrowButton, index === 0 && styles.shelfArrowButtonDisabled]}
-                          />
-                          <FocusablePressable
-                            text="↓"
-                            onSelect={() => moveShelfDown(index)}
-                            disabled={index === editableSettings.homeShelves.shelves.length - 1}
-                            style={[
-                              styles.shelfArrowButton,
-                              index === editableSettings.homeShelves.shelves.length - 1 &&
-                              styles.shelfArrowButtonDisabled,
-                            ]}
-                          />
-                          <SpatialNavigationFocusableView onSelect={() => updateShelf(index, 'enabled', !shelf.enabled)}>
-                            {({ isFocused }: { isFocused: boolean }) => (
-                              <Switch
-                                value={shelf.enabled}
-                                onValueChange={(next) => updateShelf(index, 'enabled', next)}
-                                trackColor={{ true: theme.colors.accent.primary, false: theme.colors.border.subtle }}
-                                thumbColor="#FFFFFF"
-                                style={[styles.shelfToggle, isFocused && styles.switchFocused]}
+                        <View style={styles.playbackOptionsRow}>
+                          {streamingModeOptions.map((option) => {
+                            const isSelected = editableSettings?.streaming?.serviceMode === option.value;
+                            return (
+                              <FocusablePressable
+                                key={option.value}
+                                text={option.label}
+                                onSelect={() => updateStreamingServiceMode(option.value)}
+                                style={[styles.playbackOption, isSelected && styles.playbackOptionSelected]}
+                                disabled={!editableSettings}
                               />
-                            )}
-                          </SpatialNavigationFocusableView>
+                            );
+                          })}
+                        </View>
+                      </SpatialNavigationNode>
+                      <View style={{ marginTop: 16 }}>
+                        <DropdownField
+                          label="Service Priority"
+                          value={editableSettings.streaming.servicePriority}
+                          options={servicePriorityOptions}
+                          onChange={(val) => updateStreamingServicePriority(val as StreamingServicePriority)}
+                          styles={styles}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Usenet Providers</Text>
+                        <FocusablePressable text="Add" onSelect={handleAddUsenetProvider} />
+                      </View>
+                      {editableSettings.usenet.length === 0 && (
+                        <Text style={styles.sectionDescription}>No usenet providers configured yet.</Text>
+                      )}
+                      {editableSettings.usenet.map((provider, index) => renderUsenetProvider(provider, index))}
+                    </View>
+
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Indexers</Text>
+                        <FocusablePressable text="Add" onSelect={handleAddIndexer} />
+                      </View>
+                      {editableSettings.indexers.length === 0 && (
+                        <Text style={styles.sectionDescription}>No indexers configured yet.</Text>
+                      )}
+                      {editableSettings.indexers.map((indexer, index) => renderIndexer(indexer, index))}
+                    </View>
+
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Debrid Providers</Text>
+                        <FocusablePressable text="Add" onSelect={handleAddDebridProvider} />
+                      </View>
+                      {(editableSettings?.streaming?.debridProviders?.length ?? 0) === 0 && (
+                        <Text style={styles.sectionDescription}>No debrid providers configured yet.</Text>
+                      )}
+                      {(editableSettings?.streaming?.debridProviders ?? []).map((provider, index) =>
+                        renderDebridProvider(provider, index),
+                      )}
+                    </View>
+
+                    <View style={styles.section}>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Scrapers</Text>
+                        <FocusablePressable text="Add" onSelect={handleAddTorrentScraper} />
+                      </View>
+                      <Text style={styles.sectionDescription}>
+                        Configure torrent search providers. Torrentio is enabled by default and requires no
+                        configuration.
+                      </Text>
+                      {editableSettings.torrentScrapers.length === 0 && (
+                        <Text style={styles.sectionDescription}>No torrent scrapers configured yet.</Text>
+                      )}
+                      {editableSettings.torrentScrapers.map((scraper, index) => renderTorrentScraper(scraper, index))}
+                    </View>
+                  </>
+                )}
+
+                {/* Playback Tab */}
+                {!Platform.isTV && activeTab === 'playback' && editableSettings && (
+                  <>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Player Preference</Text>
+                      <Text style={styles.sectionDescription}>
+                        Choose which player to launch after resolving a search result.
+                      </Text>
+                      <SpatialNavigationNode orientation="horizontal">
+                        <View style={styles.playbackOptionsRow}>
+                          {playbackOptions.map((option) => {
+                            const isSelected = editableSettings.playback.preferredPlayer === option.value;
+                            return (
+                              <FocusablePressable
+                                key={option.value}
+                                text={option.label}
+                                onSelect={() => updatePlaybackMode(option.value)}
+                                style={[styles.playbackOption, isSelected && styles.playbackOptionSelected]}
+                              />
+                            );
+                          })}
                         </View>
                       </SpatialNavigationNode>
                     </View>
-                  </Animated.View>
-                ))}
-              </View>
 
-              {!settings?.demoMode && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Trending Movies Source</Text>
-                  <Text style={styles.sectionDescription}>
-                    Choose which source to use for the Trending Movies shelf.
-                  </Text>
-                  <SpatialNavigationNode orientation="horizontal">
-                    <View style={styles.playbackOptionsRow}>
-                      <FocusablePressable
-                        text="Released Only"
-                        onSelect={() => updateTrendingMovieSource('released')}
-                        style={[
-                          styles.playbackOption,
-                          editableSettings.homeShelves.trendingMovieSource === 'released' && styles.playbackOptionSelected,
-                        ]}
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Audio & Subtitle Preferences</Text>
+                      <Text style={styles.sectionDescription}>
+                        Set default audio and subtitle track preferences. Use 3-letter language codes (e.g., eng, spa,
+                        fra) or full names.
+                      </Text>
+                      <TextInputField
+                        label="Preferred Audio Language"
+                        value={editableSettings.playback?.preferredAudioLanguage ?? ''}
+                        onChange={updatePlaybackField('preferredAudioLanguage')}
+                        options={{ placeholder: 'e.g., eng, English' }}
+                        styles={styles}
                       />
-                      <FocusablePressable
-                        text="All Trending"
-                        onSelect={() => updateTrendingMovieSource('all')}
-                        style={[
-                          styles.playbackOption,
-                          editableSettings.homeShelves.trendingMovieSource === 'all' && styles.playbackOptionSelected,
+                      <TextInputField
+                        label="Preferred Subtitle Language"
+                        value={editableSettings.playback?.preferredSubtitleLanguage ?? ''}
+                        onChange={updatePlaybackField('preferredSubtitleLanguage')}
+                        options={{ placeholder: 'e.g., eng, English' }}
+                        styles={styles}
+                      />
+                      <DropdownField
+                        label="Subtitle Mode"
+                        value={editableSettings.playback?.preferredSubtitleMode ?? 'off'}
+                        options={[
+                          { label: 'Off', value: 'off' },
+                          { label: 'On', value: 'on' },
+                          { label: 'Forced Only', value: 'forced-only' },
                         ]}
+                        onChange={(value) => updatePlaybackField('preferredSubtitleMode')(value)}
+                        styles={styles}
                       />
                     </View>
-                  </SpatialNavigationNode>
-                  <Text style={styles.sectionDescription}>
-                    "Released Only" shows top movies of the week (already released). "All Trending" includes upcoming
-                    movies from TMDB.
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
 
-          {/* Advanced Tab */}
-          {!Platform.isTV && activeTab === 'advanced' && editableSettings && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Streaming</Text>
-                <TextInputField
-                  label="Max download workers"
-                  value={editableSettings?.streaming?.maxDownloadWorkers ?? ''}
-                  onChange={updateStreamingNumericField('maxDownloadWorkers')}
-                  options={{ keyboardType: 'numeric' }}
-                  errorMessage={fieldErrors['streaming.maxDownloadWorkers']}
-                  styles={styles}
-                />
-                <TextInputField
-                  label="Cache size (MB)"
-                  value={editableSettings?.streaming?.maxCacheSizeMB ?? ''}
-                  onChange={updateStreamingNumericField('maxCacheSizeMB')}
-                  options={{ keyboardType: 'numeric' }}
-                  errorMessage={fieldErrors['streaming.maxCacheSizeMB']}
-                  styles={styles}
-                />
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Metadata</Text>
-                <TextInputField
-                  label="TVDB API Key"
-                  value={editableSettings.metadata.tvdbApiKey}
-                  onChange={updateMetadataField('tvdbApiKey')}
-                  styles={styles}
-                />
-                <TextInputField
-                  label="TMDB API Key"
-                  value={editableSettings.metadata.tmdbApiKey}
-                  onChange={updateMetadataField('tmdbApiKey')}
-                  styles={styles}
-                />
-                <TextInputField
-                  label="Language"
-                  value={editableSettings.metadata.language}
-                  onChange={updateMetadataField('language')}
-                  styles={styles}
-                />
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Developer Tools</Text>
-                <Text style={styles.sectionDescription}>
-                  Debug and testing tools for development purposes.
-                </Text>
-                <FocusablePressable
-                  text="MP4Box Debug Player"
-                  onSelect={() => router.push('/mp4box-debug')}
-                  style={styles.debugButton}
-                />
-                <Text style={styles.sectionDescription}>
-                  Test Dolby Vision and HDR streaming using MP4Box instead of FFmpeg.
-                  Enter a direct media URL to probe and play.
-                </Text>
-              </View>
-            </>
-          )}
-
-          {/* Filtering Tab */}
-          {!Platform.isTV && activeTab === 'filtering' && editableSettings && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Size Limits</Text>
-                <Text style={styles.sectionDescription}>
-                  Set maximum file sizes for content. Use 0 to disable size filtering.
-                </Text>
-                <TextInputField
-                  label="Max Movie Size (GB)"
-                  value={editableSettings.filtering.maxSizeMovieGb}
-                  onChange={updateFilteringField('maxSizeMovieGb')}
-                  options={{ keyboardType: 'numeric', placeholder: '0 = no limit' }}
-                  styles={styles}
-                />
-                <TextInputField
-                  label="Max Episode Size (GB)"
-                  value={editableSettings.filtering.maxSizeEpisodeGb}
-                  onChange={updateFilteringField('maxSizeEpisodeGb')}
-                  options={{ keyboardType: 'numeric', placeholder: '0 = no limit' }}
-                  styles={styles}
-                />
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Quality Filters</Text>
-                <Text style={styles.sectionDescription}>Filter content based on quality attributes.</Text>
-                <View style={styles.fieldRow}>
-                  <Text style={styles.fieldLabel}>Exclude HDR</Text>
-                  <Switch
-                    value={editableSettings.filtering.excludeHdr}
-                    onValueChange={updateFilteringField('excludeHdr')}
-                    trackColor={{ true: theme.colors.accent.primary, false: theme.colors.border.subtle }}
-                    thumbColor="#FFFFFF"
-                  />
-                </View>
-                <Text style={styles.sectionDescription}>
-                  When enabled, HDR content (Dolby Vision, HDR10, HDR10+) will be filtered out from search results.
-                </Text>
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Filter Out Terms</Text>
-                <Text style={styles.sectionDescription}>
-                  Exclude results containing specific terms. Enter a comma-separated list of terms to filter out.
-                </Text>
-                <TextInputField
-                  label="Terms to Filter Out"
-                  value={editableSettings.filtering.filterOutTerms}
-                  onChange={updateFilteringField('filterOutTerms')}
-                  options={{ placeholder: 'e.g., CAM, HDTS, Telesync' }}
-                  styles={styles}
-                />
-                <Text style={styles.sectionDescription}>
-                  Results containing any of these terms (case-insensitive) will be excluded from search results.
-                </Text>
-              </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Unplayable Releases</Text>
-                <Text style={styles.sectionDescription}>
-                  Releases marked as unplayable are filtered from manual selection and autoplay. These are typically
-                  releases that failed to stream due to errors.
-                </Text>
-                <FocusablePressable
-                  text={`Manage Unplayable Releases (${unplayableReleases.length})`}
-                  onSelect={() => setIsUnplayableReleasesModalOpen(true)}
-                />
-                {unplayableReleases.length > 0 && (
-                  <FocusablePressable
-                    text="Clear All Unplayable Releases"
-                    onSelect={clearUnplayableReleases}
-                    style={styles.secondaryButton}
-                  />
-                )}
-              </View>
-            </>
-          )}
-
-          {/* Live TV Tab - M3U playlist is configured via admin web UI */}
-          {!Platform.isTV && activeTab === 'live' && editableSettings && (
-            <>
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Hidden Channels</Text>
-                <Text style={styles.sectionDescription}>
-                  Channels you've hidden from the Live TV page. Long press a channel card to hide it.
-                </Text>
-                <FocusablePressable
-                  text={`Manage Hidden Channels (${hiddenChannelsList.length})`}
-                  onSelect={() => setIsHiddenChannelsModalOpen(true)}
-                />
-              </View>
-            </>
-          )}
-
-          {/* Save button - shown on all non-connection tabs (mobile only) */}
-          {!Platform.isTV && activeTab !== 'connection' && editableSettings && (
-            <View style={styles.section}>
-              {busy && (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color={theme.colors.accent.primary} />
-                  <Text style={styles.loadingText}>{saving ? 'Saving settings…' : 'Loading settings…'}</Text>
-                </View>
-              )}
-              <FocusablePressable
-                text="Save"
-                onSelect={handleSaveSettings}
-                disabled={busy || !dirty}
-              />
-            </View>
-          )}
-        </SpatialNavigationScrollView>
-        </View>
-        )}
-
-        {/* Hidden Channels Modal - Mobile */}
-        {!Platform.isTV && (
-          <Modal
-            visible={isHiddenChannelsModalOpen}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setIsHiddenChannelsModalOpen(false)}>
-            <View style={styles.modalOverlay}>
-              <View style={[styles.modalContent, { flexDirection: 'column' }]}>
-                <View style={[styles.modalHeader, { flexShrink: 0 }]}>
-                  <Text style={styles.modalTitle}>Hidden Channels</Text>
-                  <Pressable
-                    onPress={() => setIsHiddenChannelsModalOpen(false)}
-                    style={[styles.modalCloseButton, { paddingHorizontal: 16, paddingVertical: 8 }]}>
-                    <Text style={styles.modalCloseButtonText}>Close</Text>
-                  </Pressable>
-                </View>
-
-                {hiddenChannelsList.length === 0 ? (
-                  <Text style={styles.sectionDescription}>No hidden channels.</Text>
-                ) : (
-                  <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
-                    {hiddenChannelsList.map((channel) => (
-                      <View key={channel.id} style={styles.hiddenChannelCard}>
-                        <View style={styles.hiddenChannelInfo}>
-                          <Text style={styles.hiddenChannelName}>{channel.name}</Text>
-                          {channel.group && <Text style={styles.hiddenChannelGroup}>{channel.group}</Text>}
-                        </View>
-                        <Pressable
-                          onPress={() => unhideChannel(channel.id)}
-                          style={[styles.unhideButton, { paddingHorizontal: 12, paddingVertical: 6 }]}>
-                          <Text style={styles.unhideButtonText}>Unhide</Text>
-                        </Pressable>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Loading Screen</Text>
+                      <Text style={styles.sectionDescription}>
+                        Enable the custom loading screen during playback initialization.
+                      </Text>
+                      <View style={styles.fieldRow}>
+                        <Text style={styles.fieldLabel}>Use Loading Screen</Text>
+                        <Switch
+                          value={editableSettings.playback?.useLoadingScreen ?? false}
+                          onValueChange={(next) => {
+                            setDirty(true);
+                            setEditableSettings((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    playback: {
+                                      ...current.playback,
+                                      useLoadingScreen: next,
+                                    },
+                                  }
+                                : current,
+                            );
+                          }}
+                          trackColor={{ true: theme.colors.accent.primary, false: theme.colors.border.subtle }}
+                          thumbColor="#FFFFFF"
+                        />
                       </View>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-            </View>
-          </Modal>
-        )}
-
-        {/* Unplayable Releases Modal - Mobile */}
-        {!Platform.isTV && (
-          <Modal
-            visible={isUnplayableReleasesModalOpen}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => setIsUnplayableReleasesModalOpen(false)}>
-            <View style={styles.modalOverlay}>
-              <View style={[styles.modalContent, { flexDirection: 'column' }]}>
-                <View style={[styles.modalHeader, { flexShrink: 0 }]}>
-                  <Text style={styles.modalTitle}>Unplayable Releases</Text>
-                  <Pressable
-                    onPress={() => setIsUnplayableReleasesModalOpen(false)}
-                    style={[styles.modalCloseButton, { paddingHorizontal: 16, paddingVertical: 8 }]}>
-                    <Text style={styles.modalCloseButtonText}>Close</Text>
-                  </Pressable>
-                </View>
-
-                {unplayableReleases.length === 0 ? (
-                  <Text style={styles.sectionDescription}>No unplayable releases.</Text>
-                ) : (
-                  <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
-                    {unplayableReleases.map((release) => (
-                      <View key={release.sourcePath} style={styles.hiddenChannelCard}>
-                        <View style={styles.hiddenChannelInfo}>
-                          <Text style={styles.hiddenChannelName}>{release.title || release.sourcePath}</Text>
-                          {release.reason && <Text style={styles.hiddenChannelGroup}>{release.reason}</Text>}
-                          <Text style={styles.unplayableDate}>
-                            Marked {new Date(release.markedAt).toLocaleDateString()}
-                          </Text>
-                        </View>
-                        <Pressable
-                          onPress={() => unmarkUnplayable(release.sourcePath)}
-                          style={[styles.unhideButton, { paddingHorizontal: 12, paddingVertical: 6 }]}>
-                          <Text style={styles.unhideButtonText}>Remove</Text>
-                        </Pressable>
-                      </View>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
-            </View>
-          </Modal>
-        )}
-      </FixedSafeAreaView>
-    </SpatialNavigationRoot>
-
-    {/* Hidden Channels Modal - TV */}
-    {Platform.isTV && isHiddenChannelsModalOpen && (
-      <SpatialNavigationRoot isActive={isHiddenChannelsModalOpen}>
-        <View style={styles.tvModalOverlay}>
-          <View style={styles.tvModalContent}>
-            <Text style={styles.tvModalTitle}>Hidden Channels</Text>
-            <Text style={styles.tvModalSubtitle}>
-              {hiddenChannelsList.length === 0
-                ? 'No hidden channels.'
-                : `${hiddenChannelsList.length} hidden channel${hiddenChannelsList.length === 1 ? '' : 's'}`}
-            </Text>
-
-            <SpatialNavigationNode orientation="vertical">
-              <SpatialNavigationScrollView
-                style={styles.tvModalScrollView}
-                contentContainerStyle={styles.tvModalScrollContent}>
-                {hiddenChannelsList.map((channel, index) => (
-                  <View key={channel.id} style={styles.tvModalItem}>
-                    <View style={styles.tvModalItemInfo}>
-                      <Text style={styles.tvModalItemTitle}>{channel.name}</Text>
-                      {channel.group && <Text style={styles.tvModalItemSubtitle}>{channel.group}</Text>}
+                      <FocusablePressable
+                        text="Preview Loading Screen"
+                        onSelect={() => router.push('/strmr-loading')}
+                        style={styles.secondaryButton}
+                      />
                     </View>
-                    {index === 0 ? (
-                      <DefaultFocus>
+                  </>
+                )}
+
+                {/* Home Screen Tab */}
+                {!Platform.isTV && activeTab === 'home' && editableSettings && (
+                  <>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Home Screen Shelves</Text>
+                      <Text style={styles.sectionDescription}>
+                        Control which content shelves appear on your home screen and their order. Disabled shelves will
+                        be hidden.
+                      </Text>
+                      {editableSettings.homeShelves.shelves.map((shelf, index) => (
+                        <Animated.View
+                          key={shelf.id}
+                          layout={Layout.springify().damping(45).stiffness(250)}
+                          style={[styles.indexerCard, styles.shelfCard, !shelf.enabled && styles.shelfCardDisabled]}>
+                          <View style={styles.shelfManagementRow}>
+                            <View style={styles.shelfInfo}>
+                              <Text style={[styles.shelfName, !shelf.enabled && styles.shelfNameDisabled]}>
+                                {shelf.name}
+                              </Text>
+                            </View>
+                            <SpatialNavigationNode orientation="horizontal">
+                              <View style={styles.shelfControls}>
+                                <FocusablePressable
+                                  text="↑"
+                                  onSelect={() => moveShelfUp(index)}
+                                  disabled={index === 0}
+                                  style={[styles.shelfArrowButton, index === 0 && styles.shelfArrowButtonDisabled]}
+                                />
+                                <FocusablePressable
+                                  text="↓"
+                                  onSelect={() => moveShelfDown(index)}
+                                  disabled={index === editableSettings.homeShelves.shelves.length - 1}
+                                  style={[
+                                    styles.shelfArrowButton,
+                                    index === editableSettings.homeShelves.shelves.length - 1 &&
+                                      styles.shelfArrowButtonDisabled,
+                                  ]}
+                                />
+                                <SpatialNavigationFocusableView
+                                  onSelect={() => updateShelf(index, 'enabled', !shelf.enabled)}>
+                                  {({ isFocused }: { isFocused: boolean }) => (
+                                    <Switch
+                                      value={shelf.enabled}
+                                      onValueChange={(next) => updateShelf(index, 'enabled', next)}
+                                      trackColor={{
+                                        true: theme.colors.accent.primary,
+                                        false: theme.colors.border.subtle,
+                                      }}
+                                      thumbColor="#FFFFFF"
+                                      style={[styles.shelfToggle, isFocused && styles.switchFocused]}
+                                    />
+                                  )}
+                                </SpatialNavigationFocusableView>
+                              </View>
+                            </SpatialNavigationNode>
+                          </View>
+                        </Animated.View>
+                      ))}
+                    </View>
+
+                    {!settings?.demoMode && (
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Trending Movies Source</Text>
+                        <Text style={styles.sectionDescription}>
+                          Choose which source to use for the Trending Movies shelf.
+                        </Text>
+                        <SpatialNavigationNode orientation="horizontal">
+                          <View style={styles.playbackOptionsRow}>
+                            <FocusablePressable
+                              text="Released Only"
+                              onSelect={() => updateTrendingMovieSource('released')}
+                              style={[
+                                styles.playbackOption,
+                                editableSettings.homeShelves.trendingMovieSource === 'released' &&
+                                  styles.playbackOptionSelected,
+                              ]}
+                            />
+                            <FocusablePressable
+                              text="All Trending"
+                              onSelect={() => updateTrendingMovieSource('all')}
+                              style={[
+                                styles.playbackOption,
+                                editableSettings.homeShelves.trendingMovieSource === 'all' &&
+                                  styles.playbackOptionSelected,
+                              ]}
+                            />
+                          </View>
+                        </SpatialNavigationNode>
+                        <Text style={styles.sectionDescription}>
+                          "Released Only" shows top movies of the week (already released). "All Trending" includes
+                          upcoming movies from TMDB.
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {/* Advanced Tab */}
+                {!Platform.isTV && activeTab === 'advanced' && editableSettings && (
+                  <>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Streaming</Text>
+                      <TextInputField
+                        label="Max download workers"
+                        value={editableSettings?.streaming?.maxDownloadWorkers ?? ''}
+                        onChange={updateStreamingNumericField('maxDownloadWorkers')}
+                        options={{ keyboardType: 'numeric' }}
+                        errorMessage={fieldErrors['streaming.maxDownloadWorkers']}
+                        styles={styles}
+                      />
+                      <TextInputField
+                        label="Cache size (MB)"
+                        value={editableSettings?.streaming?.maxCacheSizeMB ?? ''}
+                        onChange={updateStreamingNumericField('maxCacheSizeMB')}
+                        options={{ keyboardType: 'numeric' }}
+                        errorMessage={fieldErrors['streaming.maxCacheSizeMB']}
+                        styles={styles}
+                      />
+                    </View>
+
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Metadata</Text>
+                      <TextInputField
+                        label="TVDB API Key"
+                        value={editableSettings.metadata.tvdbApiKey}
+                        onChange={updateMetadataField('tvdbApiKey')}
+                        styles={styles}
+                      />
+                      <TextInputField
+                        label="TMDB API Key"
+                        value={editableSettings.metadata.tmdbApiKey}
+                        onChange={updateMetadataField('tmdbApiKey')}
+                        styles={styles}
+                      />
+                      <TextInputField
+                        label="Language"
+                        value={editableSettings.metadata.language}
+                        onChange={updateMetadataField('language')}
+                        styles={styles}
+                      />
+                    </View>
+
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Developer Tools</Text>
+                      <Text style={styles.sectionDescription}>Debug and testing tools for development purposes.</Text>
+                      <FocusablePressable
+                        text="MP4Box Debug Player"
+                        onSelect={() => router.push('/mp4box-debug')}
+                        style={styles.debugButton}
+                      />
+                      <Text style={styles.sectionDescription}>
+                        Test Dolby Vision and HDR streaming using MP4Box instead of FFmpeg. Enter a direct media URL to
+                        probe and play.
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {/* Filtering Tab */}
+                {!Platform.isTV && activeTab === 'filtering' && editableSettings && (
+                  <>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Size Limits</Text>
+                      <Text style={styles.sectionDescription}>
+                        Set maximum file sizes for content. Use 0 to disable size filtering.
+                      </Text>
+                      <TextInputField
+                        label="Max Movie Size (GB)"
+                        value={editableSettings.filtering.maxSizeMovieGb}
+                        onChange={updateFilteringField('maxSizeMovieGb')}
+                        options={{ keyboardType: 'numeric', placeholder: '0 = no limit' }}
+                        styles={styles}
+                      />
+                      <TextInputField
+                        label="Max Episode Size (GB)"
+                        value={editableSettings.filtering.maxSizeEpisodeGb}
+                        onChange={updateFilteringField('maxSizeEpisodeGb')}
+                        options={{ keyboardType: 'numeric', placeholder: '0 = no limit' }}
+                        styles={styles}
+                      />
+                    </View>
+
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Quality Filters</Text>
+                      <Text style={styles.sectionDescription}>Filter content based on quality attributes.</Text>
+                      <View style={styles.fieldRow}>
+                        <Text style={styles.fieldLabel}>Exclude HDR</Text>
+                        <Switch
+                          value={editableSettings.filtering.excludeHdr}
+                          onValueChange={updateFilteringField('excludeHdr')}
+                          trackColor={{ true: theme.colors.accent.primary, false: theme.colors.border.subtle }}
+                          thumbColor="#FFFFFF"
+                        />
+                      </View>
+                      <Text style={styles.sectionDescription}>
+                        When enabled, HDR content (Dolby Vision, HDR10, HDR10+) will be filtered out from search
+                        results.
+                      </Text>
+                    </View>
+
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Filter Out Terms</Text>
+                      <Text style={styles.sectionDescription}>
+                        Exclude results containing specific terms. Enter a comma-separated list of terms to filter out.
+                      </Text>
+                      <TextInputField
+                        label="Terms to Filter Out"
+                        value={editableSettings.filtering.filterOutTerms}
+                        onChange={updateFilteringField('filterOutTerms')}
+                        options={{ placeholder: 'e.g., CAM, HDTS, Telesync' }}
+                        styles={styles}
+                      />
+                      <Text style={styles.sectionDescription}>
+                        Results containing any of these terms (case-insensitive) will be excluded from search results.
+                      </Text>
+                    </View>
+
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Unplayable Releases</Text>
+                      <Text style={styles.sectionDescription}>
+                        Releases marked as unplayable are filtered from manual selection and autoplay. These are
+                        typically releases that failed to stream due to errors.
+                      </Text>
+                      <FocusablePressable
+                        text={`Manage Unplayable Releases (${unplayableReleases.length})`}
+                        onSelect={() => setIsUnplayableReleasesModalOpen(true)}
+                      />
+                      {unplayableReleases.length > 0 && (
+                        <FocusablePressable
+                          text="Clear All Unplayable Releases"
+                          onSelect={clearUnplayableReleases}
+                          style={styles.secondaryButton}
+                        />
+                      )}
+                    </View>
+                  </>
+                )}
+
+                {/* Live TV Tab - M3U playlist is configured via admin web UI */}
+                {!Platform.isTV && activeTab === 'live' && editableSettings && (
+                  <>
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Hidden Channels</Text>
+                      <Text style={styles.sectionDescription}>
+                        Channels you've hidden from the Live TV page. Long press a channel card to hide it.
+                      </Text>
+                      <FocusablePressable
+                        text={`Manage Hidden Channels (${hiddenChannelsList.length})`}
+                        onSelect={() => setIsHiddenChannelsModalOpen(true)}
+                      />
+                    </View>
+                  </>
+                )}
+
+                {/* Save button - shown on all non-connection tabs (mobile only) */}
+                {!Platform.isTV && activeTab !== 'connection' && editableSettings && (
+                  <View style={styles.section}>
+                    {busy && (
+                      <View style={styles.loadingRow}>
+                        <ActivityIndicator size="small" color={theme.colors.accent.primary} />
+                        <Text style={styles.loadingText}>{saving ? 'Saving settings…' : 'Loading settings…'}</Text>
+                      </View>
+                    )}
+                    <FocusablePressable text="Save" onSelect={handleSaveSettings} disabled={busy || !dirty} />
+                  </View>
+                )}
+              </SpatialNavigationScrollView>
+            </View>
+          )}
+
+          {/* Hidden Channels Modal - Mobile */}
+          {!Platform.isTV && (
+            <Modal
+              visible={isHiddenChannelsModalOpen}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setIsHiddenChannelsModalOpen(false)}>
+              <View style={styles.modalOverlay}>
+                <View style={[styles.modalContent, { flexDirection: 'column' }]}>
+                  <View style={[styles.modalHeader, { flexShrink: 0 }]}>
+                    <Text style={styles.modalTitle}>Hidden Channels</Text>
+                    <Pressable
+                      onPress={() => setIsHiddenChannelsModalOpen(false)}
+                      style={[styles.modalCloseButton, { paddingHorizontal: 16, paddingVertical: 8 }]}>
+                      <Text style={styles.modalCloseButtonText}>Close</Text>
+                    </Pressable>
+                  </View>
+
+                  {hiddenChannelsList.length === 0 ? (
+                    <Text style={styles.sectionDescription}>No hidden channels.</Text>
+                  ) : (
+                    <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
+                      {hiddenChannelsList.map((channel) => (
+                        <View key={channel.id} style={styles.hiddenChannelCard}>
+                          <View style={styles.hiddenChannelInfo}>
+                            <Text style={styles.hiddenChannelName}>{channel.name}</Text>
+                            {channel.group && <Text style={styles.hiddenChannelGroup}>{channel.group}</Text>}
+                          </View>
+                          <Pressable
+                            onPress={() => unhideChannel(channel.id)}
+                            style={[styles.unhideButton, { paddingHorizontal: 12, paddingVertical: 6 }]}>
+                            <Text style={styles.unhideButtonText}>Unhide</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              </View>
+            </Modal>
+          )}
+
+          {/* Unplayable Releases Modal - Mobile */}
+          {!Platform.isTV && (
+            <Modal
+              visible={isUnplayableReleasesModalOpen}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setIsUnplayableReleasesModalOpen(false)}>
+              <View style={styles.modalOverlay}>
+                <View style={[styles.modalContent, { flexDirection: 'column' }]}>
+                  <View style={[styles.modalHeader, { flexShrink: 0 }]}>
+                    <Text style={styles.modalTitle}>Unplayable Releases</Text>
+                    <Pressable
+                      onPress={() => setIsUnplayableReleasesModalOpen(false)}
+                      style={[styles.modalCloseButton, { paddingHorizontal: 16, paddingVertical: 8 }]}>
+                      <Text style={styles.modalCloseButtonText}>Close</Text>
+                    </Pressable>
+                  </View>
+
+                  {unplayableReleases.length === 0 ? (
+                    <Text style={styles.sectionDescription}>No unplayable releases.</Text>
+                  ) : (
+                    <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
+                      {unplayableReleases.map((release) => (
+                        <View key={release.sourcePath} style={styles.hiddenChannelCard}>
+                          <View style={styles.hiddenChannelInfo}>
+                            <Text style={styles.hiddenChannelName}>{release.title || release.sourcePath}</Text>
+                            {release.reason && <Text style={styles.hiddenChannelGroup}>{release.reason}</Text>}
+                            <Text style={styles.unplayableDate}>
+                              Marked {new Date(release.markedAt).toLocaleDateString()}
+                            </Text>
+                          </View>
+                          <Pressable
+                            onPress={() => unmarkUnplayable(release.sourcePath)}
+                            style={[styles.unhideButton, { paddingHorizontal: 12, paddingVertical: 6 }]}>
+                            <Text style={styles.unhideButtonText}>Remove</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              </View>
+            </Modal>
+          )}
+        </FixedSafeAreaView>
+      </SpatialNavigationRoot>
+
+      {/* Hidden Channels Modal - TV */}
+      {Platform.isTV && isHiddenChannelsModalOpen && (
+        <SpatialNavigationRoot isActive={isHiddenChannelsModalOpen}>
+          <View style={styles.tvModalOverlay}>
+            <View style={styles.tvModalContent}>
+              <Text style={styles.tvModalTitle}>Hidden Channels</Text>
+              <Text style={styles.tvModalSubtitle}>
+                {hiddenChannelsList.length === 0
+                  ? 'No hidden channels.'
+                  : `${hiddenChannelsList.length} hidden channel${hiddenChannelsList.length === 1 ? '' : 's'}`}
+              </Text>
+
+              <SpatialNavigationNode orientation="vertical">
+                <SpatialNavigationScrollView
+                  style={styles.tvModalScrollView}
+                  contentContainerStyle={styles.tvModalScrollContent}>
+                  {hiddenChannelsList.map((channel, index) => (
+                    <View key={channel.id} style={styles.tvModalItem}>
+                      <View style={styles.tvModalItemInfo}>
+                        <Text style={styles.tvModalItemTitle}>{channel.name}</Text>
+                        {channel.group && <Text style={styles.tvModalItemSubtitle}>{channel.group}</Text>}
+                      </View>
+                      {index === 0 ? (
+                        <DefaultFocus>
+                          <FocusablePressable
+                            focusKey={`unhide-channel-${channel.id}`}
+                            text="Unhide"
+                            onSelect={() => unhideChannel(channel.id)}
+                            style={styles.tvModalItemButton}
+                            focusedStyle={styles.tvModalItemButtonFocused}
+                            textStyle={styles.tvModalItemButtonText}
+                            focusedTextStyle={styles.tvModalItemButtonTextFocused}
+                          />
+                        </DefaultFocus>
+                      ) : (
                         <FocusablePressable
                           focusKey={`unhide-channel-${channel.id}`}
                           text="Unhide"
@@ -3142,25 +3388,25 @@ function SettingsScreen() {
                           textStyle={styles.tvModalItemButtonText}
                           focusedTextStyle={styles.tvModalItemButtonTextFocused}
                         />
-                      </DefaultFocus>
-                    ) : (
-                      <FocusablePressable
-                        focusKey={`unhide-channel-${channel.id}`}
-                        text="Unhide"
-                        onSelect={() => unhideChannel(channel.id)}
-                        style={styles.tvModalItemButton}
-                        focusedStyle={styles.tvModalItemButtonFocused}
-                        textStyle={styles.tvModalItemButtonText}
-                        focusedTextStyle={styles.tvModalItemButtonTextFocused}
-                      />
-                    )}
-                  </View>
-                ))}
-              </SpatialNavigationScrollView>
+                      )}
+                    </View>
+                  ))}
+                </SpatialNavigationScrollView>
 
-              <View style={styles.tvModalFooter}>
-                {hiddenChannelsList.length === 0 ? (
-                  <DefaultFocus>
+                <View style={styles.tvModalFooter}>
+                  {hiddenChannelsList.length === 0 ? (
+                    <DefaultFocus>
+                      <FocusablePressable
+                        focusKey="close-hidden-channels"
+                        text="Close"
+                        onSelect={() => setIsHiddenChannelsModalOpen(false)}
+                        style={styles.tvModalCloseButton}
+                        focusedStyle={styles.tvModalCloseButtonFocused}
+                        textStyle={styles.tvModalCloseButtonText}
+                        focusedTextStyle={styles.tvModalCloseButtonTextFocused}
+                      />
+                    </DefaultFocus>
+                  ) : (
                     <FocusablePressable
                       focusKey="close-hidden-channels"
                       text="Close"
@@ -3170,56 +3416,54 @@ function SettingsScreen() {
                       textStyle={styles.tvModalCloseButtonText}
                       focusedTextStyle={styles.tvModalCloseButtonTextFocused}
                     />
-                  </DefaultFocus>
-                ) : (
-                  <FocusablePressable
-                    focusKey="close-hidden-channels"
-                    text="Close"
-                    onSelect={() => setIsHiddenChannelsModalOpen(false)}
-                    style={styles.tvModalCloseButton}
-                    focusedStyle={styles.tvModalCloseButtonFocused}
-                    textStyle={styles.tvModalCloseButtonText}
-                    focusedTextStyle={styles.tvModalCloseButtonTextFocused}
-                  />
-                )}
-              </View>
-            </SpatialNavigationNode>
+                  )}
+                </View>
+              </SpatialNavigationNode>
+            </View>
           </View>
-        </View>
-      </SpatialNavigationRoot>
-    )}
+        </SpatialNavigationRoot>
+      )}
 
-    {/* Unplayable Releases Modal - TV */}
-    {Platform.isTV && isUnplayableReleasesModalOpen && (
-      <SpatialNavigationRoot isActive={isUnplayableReleasesModalOpen}>
-        <View style={styles.tvModalOverlay}>
-          <View style={styles.tvModalContent}>
-            <Text style={styles.tvModalTitle}>Unplayable Releases</Text>
-            <Text style={styles.tvModalSubtitle}>
-              {unplayableReleases.length === 0
-                ? 'No unplayable releases.'
-                : `${unplayableReleases.length} unplayable release${unplayableReleases.length === 1 ? '' : 's'}`}
-            </Text>
+      {/* Unplayable Releases Modal - TV */}
+      {Platform.isTV && isUnplayableReleasesModalOpen && (
+        <SpatialNavigationRoot isActive={isUnplayableReleasesModalOpen}>
+          <View style={styles.tvModalOverlay}>
+            <View style={styles.tvModalContent}>
+              <Text style={styles.tvModalTitle}>Unplayable Releases</Text>
+              <Text style={styles.tvModalSubtitle}>
+                {unplayableReleases.length === 0
+                  ? 'No unplayable releases.'
+                  : `${unplayableReleases.length} unplayable release${unplayableReleases.length === 1 ? '' : 's'}`}
+              </Text>
 
-            <SpatialNavigationNode orientation="vertical">
-              <SpatialNavigationScrollView
-                style={styles.tvModalScrollView}
-                contentContainerStyle={styles.tvModalScrollContent}>
-                {unplayableReleases.map((release, index) => (
-                  <View key={release.sourcePath} style={styles.tvModalItem}>
-                    <View style={styles.tvModalItemInfo}>
-                      <Text style={styles.tvModalItemTitle} numberOfLines={1}>
-                        {release.title || release.sourcePath}
-                      </Text>
-                      {release.reason && (
-                        <Text style={styles.tvModalItemSubtitle}>{release.reason}</Text>
-                      )}
-                      <Text style={styles.tvModalItemMeta}>
-                        Marked {new Date(release.markedAt).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    {index === 0 ? (
-                      <DefaultFocus>
+              <SpatialNavigationNode orientation="vertical">
+                <SpatialNavigationScrollView
+                  style={styles.tvModalScrollView}
+                  contentContainerStyle={styles.tvModalScrollContent}>
+                  {unplayableReleases.map((release, index) => (
+                    <View key={release.sourcePath} style={styles.tvModalItem}>
+                      <View style={styles.tvModalItemInfo}>
+                        <Text style={styles.tvModalItemTitle} numberOfLines={1}>
+                          {release.title || release.sourcePath}
+                        </Text>
+                        {release.reason && <Text style={styles.tvModalItemSubtitle}>{release.reason}</Text>}
+                        <Text style={styles.tvModalItemMeta}>
+                          Marked {new Date(release.markedAt).toLocaleDateString()}
+                        </Text>
+                      </View>
+                      {index === 0 ? (
+                        <DefaultFocus>
+                          <FocusablePressable
+                            focusKey={`unmark-release-${index}`}
+                            text="Remove"
+                            onSelect={() => unmarkUnplayable(release.sourcePath)}
+                            style={styles.tvModalItemButton}
+                            focusedStyle={styles.tvModalItemButtonFocused}
+                            textStyle={styles.tvModalItemButtonText}
+                            focusedTextStyle={styles.tvModalItemButtonTextFocused}
+                          />
+                        </DefaultFocus>
+                      ) : (
                         <FocusablePressable
                           focusKey={`unmark-release-${index}`}
                           text="Remove"
@@ -3229,36 +3473,36 @@ function SettingsScreen() {
                           textStyle={styles.tvModalItemButtonText}
                           focusedTextStyle={styles.tvModalItemButtonTextFocused}
                         />
-                      </DefaultFocus>
-                    ) : (
-                      <FocusablePressable
-                        focusKey={`unmark-release-${index}`}
-                        text="Remove"
-                        onSelect={() => unmarkUnplayable(release.sourcePath)}
-                        style={styles.tvModalItemButton}
-                        focusedStyle={styles.tvModalItemButtonFocused}
-                        textStyle={styles.tvModalItemButtonText}
-                        focusedTextStyle={styles.tvModalItemButtonTextFocused}
-                      />
-                    )}
-                  </View>
-                ))}
-              </SpatialNavigationScrollView>
+                      )}
+                    </View>
+                  ))}
+                </SpatialNavigationScrollView>
 
-              <View style={styles.tvModalFooter}>
-                {unplayableReleases.length > 0 && (
-                  <FocusablePressable
-                    focusKey="clear-all-releases"
-                    text="Clear All"
-                    onSelect={clearUnplayableReleases}
-                    style={[styles.tvModalCloseButton, styles.tvModalDangerButton]}
-                    focusedStyle={[styles.tvModalCloseButtonFocused, styles.tvModalDangerButtonFocused]}
-                    textStyle={[styles.tvModalCloseButtonText, styles.tvModalDangerButtonText]}
-                    focusedTextStyle={styles.tvModalCloseButtonTextFocused}
-                  />
-                )}
-                {unplayableReleases.length === 0 ? (
-                  <DefaultFocus>
+                <View style={styles.tvModalFooter}>
+                  {unplayableReleases.length > 0 && (
+                    <FocusablePressable
+                      focusKey="clear-all-releases"
+                      text="Clear All"
+                      onSelect={clearUnplayableReleases}
+                      style={[styles.tvModalCloseButton, styles.tvModalDangerButton]}
+                      focusedStyle={[styles.tvModalCloseButtonFocused, styles.tvModalDangerButtonFocused]}
+                      textStyle={[styles.tvModalCloseButtonText, styles.tvModalDangerButtonText]}
+                      focusedTextStyle={styles.tvModalCloseButtonTextFocused}
+                    />
+                  )}
+                  {unplayableReleases.length === 0 ? (
+                    <DefaultFocus>
+                      <FocusablePressable
+                        focusKey="close-unplayable-releases"
+                        text="Close"
+                        onSelect={() => setIsUnplayableReleasesModalOpen(false)}
+                        style={styles.tvModalCloseButton}
+                        focusedStyle={styles.tvModalCloseButtonFocused}
+                        textStyle={styles.tvModalCloseButtonText}
+                        focusedTextStyle={styles.tvModalCloseButtonTextFocused}
+                      />
+                    </DefaultFocus>
+                  ) : (
                     <FocusablePressable
                       focusKey="close-unplayable-releases"
                       text="Close"
@@ -3268,39 +3512,28 @@ function SettingsScreen() {
                       textStyle={styles.tvModalCloseButtonText}
                       focusedTextStyle={styles.tvModalCloseButtonTextFocused}
                     />
-                  </DefaultFocus>
-                ) : (
-                  <FocusablePressable
-                    focusKey="close-unplayable-releases"
-                    text="Close"
-                    onSelect={() => setIsUnplayableReleasesModalOpen(false)}
-                    style={styles.tvModalCloseButton}
-                    focusedStyle={styles.tvModalCloseButtonFocused}
-                    textStyle={styles.tvModalCloseButtonText}
-                    focusedTextStyle={styles.tvModalCloseButtonTextFocused}
-                  />
-                )}
-              </View>
-            </SpatialNavigationNode>
+                  )}
+                </View>
+              </SpatialNavigationNode>
+            </View>
           </View>
-        </View>
-      </SpatialNavigationRoot>
-    )}
+        </SpatialNavigationRoot>
+      )}
 
-    {/* TV Text Input Modal */}
-    {Platform.isTV && (
-      <TextInputModal
-        visible={textInputModal.visible}
-        label={textInputModal.label}
-        value={textInputModal.value}
-        onSubmit={handleTextInputSubmit}
-        onCancel={closeTextInputModal}
-        options={textInputModal.options}
-        styles={styles}
-        theme={theme}
-      />
-    )}
-  </>
+      {/* TV Text Input Modal */}
+      {Platform.isTV && (
+        <TextInputModal
+          visible={textInputModal.visible}
+          label={textInputModal.label}
+          value={textInputModal.value}
+          onSubmit={handleTextInputSubmit}
+          onCancel={closeTextInputModal}
+          options={textInputModal.options}
+          styles={styles}
+          theme={theme}
+        />
+      )}
+    </>
   );
 }
 
@@ -3861,7 +4094,7 @@ const createStyles = (theme: NovaTheme, screenWidth = 1920, screenHeight = 1080)
     },
     tvGridInlineInput: {
       flex: 1,
-      fontSize: 28,
+      fontSize: 22,
       color: theme.colors.text.primary,
       backgroundColor: theme.colors.background.base,
       borderRadius: theme.radius.md,
@@ -3905,11 +4138,13 @@ const createStyles = (theme: NovaTheme, screenWidth = 1920, screenHeight = 1080)
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      gap: theme.spacing.lg,
       marginTop: theme.spacing.xl,
+      minHeight: 56,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
     },
     tvGridToggleRowFocused: {
-      // Focus indicated by switch scale
+      // Focus is now on the switch itself
     },
     tvGridToggleLabel: {
       flex: 1,
@@ -3917,8 +4152,9 @@ const createStyles = (theme: NovaTheme, screenWidth = 1920, screenHeight = 1080)
     },
     tvGridToggleLabelText: {
       ...theme.typography.title.md,
-      fontWeight: '600',
       color: theme.colors.text.primary,
+      fontWeight: '600',
+      minWidth: 220,
       marginLeft: theme.spacing.lg,
     },
     tvGridToggleSwitchFocused: {
@@ -3956,7 +4192,7 @@ const createStyles = (theme: NovaTheme, screenWidth = 1920, screenHeight = 1080)
       flexWrap: 'wrap',
       gap: theme.spacing.sm,
       flex: 1,
-      justifyContent: 'flex-start',
+      justifyContent: 'flex-end',
     },
     tvGridButtonRow: {
       flexDirection: 'row',
@@ -4006,6 +4242,19 @@ const createStyles = (theme: NovaTheme, screenWidth = 1920, screenHeight = 1080)
     // Spacing between grid items
     tvGridItemSpacing: {
       marginBottom: theme.spacing.sm,
+    },
+    tvGridCustomToggle: {
+      width: 50,
+      height: 30,
+      borderRadius: 15,
+      justifyContent: 'center',
+      padding: 2,
+    },
+    tvGridCustomToggleThumb: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: theme.colors.text.inverse,
     },
   });
 };

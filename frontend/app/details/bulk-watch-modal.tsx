@@ -119,7 +119,11 @@ export const BulkWatchModal = ({
                         onSelect={handleMarkAllWatched}
                         onFocus={() => handleItemFocus(0)}>
                         {({ isFocused }: { isFocused: boolean }) => (
-                          <View ref={(ref) => { if (ref) itemRefsRef.current.set(0, ref); }} collapsable={false}>
+                          <View
+                            ref={(ref) => {
+                              if (ref) itemRefsRef.current.set(0, ref);
+                            }}
+                            collapsable={false}>
                             <Pressable
                               style={[styles.option, isFocused && styles.optionFocused]}
                               onPress={!Platform.isTV ? handleMarkAllWatched : undefined}>
@@ -150,7 +154,11 @@ export const BulkWatchModal = ({
                       onSelect={handleMarkAllUnwatched}
                       onFocus={() => handleItemFocus(1)}>
                       {({ isFocused }: { isFocused: boolean }) => (
-                        <View ref={(ref) => { if (ref) itemRefsRef.current.set(1, ref); }} collapsable={false}>
+                        <View
+                          ref={(ref) => {
+                            if (ref) itemRefsRef.current.set(1, ref);
+                          }}
+                          collapsable={false}>
                           <Pressable
                             style={[styles.option, isFocused && styles.optionFocused]}
                             onPress={!Platform.isTV ? handleMarkAllUnwatched : undefined}>
@@ -194,7 +202,11 @@ export const BulkWatchModal = ({
                             }}
                             onFocus={() => handleItemFocus(2)}>
                             {({ isFocused }: { isFocused: boolean }) => (
-                              <View ref={(ref) => { if (ref) itemRefsRef.current.set(2, ref); }} collapsable={false}>
+                              <View
+                                ref={(ref) => {
+                                  if (ref) itemRefsRef.current.set(2, ref);
+                                }}
+                                collapsable={false}>
                                 <Pressable
                                   style={[styles.option, isFocused && styles.optionFocused]}
                                   onPress={
@@ -243,7 +255,11 @@ export const BulkWatchModal = ({
                             }}
                             onFocus={() => handleItemFocus(3)}>
                             {({ isFocused }: { isFocused: boolean }) => (
-                              <View ref={(ref) => { if (ref) itemRefsRef.current.set(3, ref); }} collapsable={false}>
+                              <View
+                                ref={(ref) => {
+                                  if (ref) itemRefsRef.current.set(3, ref);
+                                }}
+                                collapsable={false}>
                                 <Pressable
                                   style={[styles.option, isFocused && styles.optionFocused]}
                                   onPress={
@@ -308,7 +324,9 @@ export const BulkWatchModal = ({
                                 onFocus={() => handleItemFocus(watchedIndex)}>
                                 {({ isFocused }: { isFocused: boolean }) => (
                                   <View
-                                    ref={(ref) => { if (ref) itemRefsRef.current.set(watchedIndex, ref); }}
+                                    ref={(ref) => {
+                                      if (ref) itemRefsRef.current.set(watchedIndex, ref);
+                                    }}
                                     collapsable={false}>
                                     <Pressable
                                       style={[styles.option, isFocused && styles.optionFocused]}
@@ -353,7 +371,9 @@ export const BulkWatchModal = ({
                                 onFocus={() => handleItemFocus(unwatchedIndex)}>
                                 {({ isFocused }: { isFocused: boolean }) => (
                                   <View
-                                    ref={(ref) => { if (ref) itemRefsRef.current.set(unwatchedIndex, ref); }}
+                                    ref={(ref) => {
+                                      if (ref) itemRefsRef.current.set(unwatchedIndex, ref);
+                                    }}
                                     collapsable={false}>
                                     <Pressable
                                       style={[styles.option, isFocused && styles.optionFocused]}

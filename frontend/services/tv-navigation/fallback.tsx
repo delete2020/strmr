@@ -1,5 +1,5 @@
 import React, { PropsWithChildren, ReactNode, forwardRef, useImperativeHandle } from 'react';
-import { Pressable, ScrollView, StyleProp, View, ViewStyle, ScrollViewProps } from 'react-native';
+import { Pressable, ScrollView, StyleProp, View, ViewStyle } from 'react-native';
 
 type FocusRenderFn<TProps extends Record<string, unknown> = Record<string, unknown>> = (
   props: TProps & { isFocused: boolean; hasFocusedChild: boolean },
@@ -68,8 +68,7 @@ export const SpatialNavigationFocusableView: React.FC<FocusableViewProps> = ({
     onLongPress={disabled ? undefined : onLongSelect}
     delayLongPress={500}
     style={style}
-    testID={testID}
-  >
+    testID={testID}>
     {renderMaybeFunctionChild(children)}
   </Pressable>
 );
@@ -82,8 +81,7 @@ export const SpatialNavigationScrollView = forwardRef<ScrollView, React.Componen
       ref={ref}
       contentInsetAdjustmentBehavior={contentInsetAdjustmentBehavior ?? 'never'}
       automaticallyAdjustContentInsets={automaticallyAdjustContentInsets ?? false}
-      {...rest}
-    >
+      {...rest}>
       {children}
     </ScrollView>
   ),
@@ -103,29 +101,27 @@ interface VirtualizedListProps {
   children?: ReactNode;
 }
 
-export const SpatialNavigationVirtualizedList = forwardRef<
-  SpatialNavigationVirtualizedListRef,
-  VirtualizedListProps
->(function SpatialNavigationVirtualizedList(
-  { data = [], renderItem, orientation = 'vertical', style },
-  ref,
-) {
-  useImperativeHandle(ref, () => ({ focus: () => { } }), []);
+export const SpatialNavigationVirtualizedList = forwardRef<SpatialNavigationVirtualizedListRef, VirtualizedListProps>(
+  function SpatialNavigationVirtualizedList({ data = [], renderItem, orientation = 'vertical', style }, ref) {
+    useImperativeHandle(ref, () => ({ focus: () => {} }), []);
 
-  return (
-    <ScrollView
-      horizontal={orientation === 'horizontal'}
-      style={style}
-      showsHorizontalScrollIndicator={false}
-      contentInsetAdjustmentBehavior="never"
-      automaticallyAdjustContentInsets={false}
-    >
-      {renderItem && data.map((item: unknown, index: number) => (
-        <View key={((item as Record<string, unknown>)?.key as string) || String(index)}>{renderItem({ item, index })}</View>
-      ))}
-    </ScrollView>
-  );
-});
+    return (
+      <ScrollView
+        horizontal={orientation === 'horizontal'}
+        style={style}
+        showsHorizontalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}>
+        {renderItem &&
+          data.map((item: unknown, index: number) => (
+            <View key={((item as Record<string, unknown>)?.key as string) || String(index)}>
+              {renderItem({ item, index })}
+            </View>
+          ))}
+      </ScrollView>
+    );
+  },
+);
 
 interface VirtualizedGridProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,7 +178,7 @@ export const SpatialNavigation = {
 };
 
 export const useSpatialNavigator = () => ({
-  grabFocus: () => { },
+  grabFocus: () => {},
 });
 
 export const Directions = {
@@ -201,14 +197,10 @@ export const SpatialNavigationEvents = {
 
 export const SpatialNavigationDeviceTypeProvider: React.FC<PropsWithChildren> = ({ children }) => <>{children}</>;
 
-export const SpatialNavigationView: React.FC<PropsWithChildren<{ direction?: 'horizontal' | 'vertical'; style?: StyleProp<ViewStyle> }>> = ({
-  children,
-  direction = 'vertical',
-  style,
-}) => (
-  <View style={[{ flexDirection: direction === 'horizontal' ? 'row' : 'column' }, style]}>
-    {children}
-  </View>
+export const SpatialNavigationView: React.FC<
+  PropsWithChildren<{ direction?: 'horizontal' | 'vertical'; style?: StyleProp<ViewStyle> }>
+> = ({ children, direction = 'vertical', style }) => (
+  <View style={[{ flexDirection: direction === 'horizontal' ? 'row' : 'column' }, style]}>{children}</View>
 );
 
 export type Directions = (typeof Directions)[keyof typeof Directions];

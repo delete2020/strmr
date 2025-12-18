@@ -70,11 +70,7 @@ export function tvScale(tvosValue: number, mobileValue?: number): number {
  *   mobile: 320,
  * });
  */
-export function tvScaleExplicit(options: {
-  tvos: number;
-  androidTv?: number;
-  mobile?: number;
-}): number {
+export function tvScaleExplicit(options: { tvos: number; androidTv?: number; mobile?: number }): number {
   if (!isTV) {
     return options.mobile ?? options.tvos;
   }

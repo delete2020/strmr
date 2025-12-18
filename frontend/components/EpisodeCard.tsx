@@ -283,8 +283,7 @@ const EpisodeCard = memo(function EpisodeCard({ episode }: EpisodeCardProps) {
                 });
               }
               setIsOverviewExpanded((prev) => !prev);
-            }}
-          >
+            }}>
             <View>
               {/* Hidden text to measure collapsed height - key forces remount on episode change */}
               <Text
@@ -304,8 +303,7 @@ const EpisodeCard = memo(function EpisodeCard({ episode }: EpisodeCardProps) {
                       setIsExpandable(rawExpandedHeightRef.current > height + 2);
                     }
                   }
-                }}
-              >
+                }}>
                 {episode.overview}
               </Text>
               {/* Hidden text to measure full height - key forces remount on episode change */}
@@ -323,25 +321,21 @@ const EpisodeCard = memo(function EpisodeCard({ episode }: EpisodeCardProps) {
                       setIsExpandable(height > rawCollapsedHeightRef.current + 2);
                     }
                   }
-                }}
-              >
+                }}>
                 {episode.overview}
               </Text>
               {/* Visible animated container */}
               <Animated.View
-                style={[
-                  { overflow: 'hidden' },
-                  collapsedHeight > 0 ? { height: overviewHeight } : undefined,
-                ]}
-              >
+                style={[{ overflow: 'hidden' }, collapsedHeight > 0 ? { height: overviewHeight } : undefined]}>
                 <Text style={[styles.episodeOverview, { marginBottom: 0 }]}>{episode.overview}</Text>
               </Animated.View>
             </View>
-            <Text style={[
-              styles.overviewToggle,
-              // Hide text but preserve space when not expandable
-              !isExpandable && { opacity: 0 }
-            ]}>
+            <Text
+              style={[
+                styles.overviewToggle,
+                // Hide text but preserve space when not expandable
+                !isExpandable && { opacity: 0 },
+              ]}>
               {isOverviewExpanded ? 'Show less' : 'More'}
             </Text>
           </Pressable>

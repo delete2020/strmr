@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react';
 
 import { SpatialNavigationFocusableView } from '@/services/tv-navigation';
 import { Image } from './Image';
-import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle, Platform } from 'react-native';
+import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 import { Title } from '../services/api';
 import type { NovaTheme } from '../theme';

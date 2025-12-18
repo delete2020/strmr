@@ -139,9 +139,8 @@ const SeekBar = ({
   const isSeekingOnTV = isTvPlatform && seekIndicatorAmount !== 0;
 
   // When seeking on TV, show the start time position for the current thumb, not the live currentTime
-  const effectiveTime = isDragging && scrubTime !== null
-    ? scrubTime
-    : (isSeekingOnTV ? seekIndicatorStartTime : currentTime);
+  const effectiveTime =
+    isDragging && scrubTime !== null ? scrubTime : isSeekingOnTV ? seekIndicatorStartTime : currentTime;
   const hasKnownDuration = Number.isFinite(duration) && duration > 0;
   const remainingTime = hasKnownDuration ? Math.max(duration - effectiveTime, 0) : 0;
   const progressRatio = duration > 0 ? Math.min(Math.max(effectiveTime / duration, 0), 1) : 0;
@@ -187,9 +186,7 @@ const SeekBar = ({
         </View>
         <View style={[styles.seekbarThumb, { left: getThumbPosition() }]} />
         {/* Target position thumb for TV seeking */}
-        {isSeekingOnTV && (
-          <View style={[styles.seekbarTargetThumb, { left: targetThumbLeft }]} />
-        )}
+        {isSeekingOnTV && <View style={[styles.seekbarTargetThumb, { left: targetThumbLeft }]} />}
       </View>
       <View style={styles.timeContainer}>
         {isSeekingOnTV ? (
@@ -204,7 +201,9 @@ const SeekBar = ({
         ) : (
           <>
             <Text style={styles.timeText}>{formatTime(effectiveTime)}</Text>
-            <Text style={styles.timeText}>{hasKnownDuration ? `-${formatTime(remainingTime)}` : formatTime(duration)}</Text>
+            <Text style={styles.timeText}>
+              {hasKnownDuration ? `-${formatTime(remainingTime)}` : formatTime(duration)}
+            </Text>
           </>
         )}
       </View>

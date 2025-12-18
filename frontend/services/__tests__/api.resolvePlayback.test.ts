@@ -199,9 +199,7 @@ describe('ApiService.resolvePlayback', () => {
       }
 
       if (url.includes(`/playback/queue/${queueId}`)) {
-        return Promise.resolve(
-          errorJsonResponse(502, 'playback queue item failed: unable to extract media file'),
-        );
+        return Promise.resolve(errorJsonResponse(502, 'playback queue item failed: unable to extract media file'));
       }
 
       throw new Error(`Unexpected fetch to ${url}`);

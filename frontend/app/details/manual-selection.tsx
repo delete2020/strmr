@@ -13,7 +13,18 @@ import {
 } from '@/services/tv-navigation';
 import type { NovaTheme } from '@/theme';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle, type TextStyle } from 'react-native';
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+  type TextStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatFileSize, formatPublishDate, getResultKey } from './utils';
 
@@ -117,7 +128,12 @@ export const ManualSelection = ({
       if (healthState) {
         switch (healthState.state) {
           case 'checking':
-            statusLabel = serviceType === 'debrid' ? 'Checking cache status…' : demoMode ? 'Checking health…' : 'Checking Usenet health…';
+            statusLabel =
+              serviceType === 'debrid'
+                ? 'Checking cache status…'
+                : demoMode
+                  ? 'Checking health…'
+                  : 'Checking Usenet health…';
             break;
           case 'healthy': {
             const actionText = Platform.isTV ? 'Select to play' : 'Tap to play';

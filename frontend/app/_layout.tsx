@@ -186,33 +186,33 @@ export default function RootLayout() {
                                   <ConfigureRemoteControl />
                                   <GoBackConfiguration />
                                   <Stack
-                                  screenOptions={{
-                                    headerShown: false,
-                                    // Enable native swipe-back gesture on mobile
-                                    gestureEnabled: !Platform.isTV,
-                                    gestureDirection: 'horizontal',
-                                    animation: Platform.isTV ? 'none' : 'default',
-                                    // Freeze inactive screens to free memory - critical for low-RAM devices like Fire Stick
-                                    freezeOnBlur: true,
-                                  }}>
-                                  {/* Drawer as the main screen - uses file-based routing */}
-                                  <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-                                  {/* Details should render as a standard screen so it shares navigation affordances */}
-                                  <Stack.Screen
-                                    name="details"
-                                    options={{
+                                    screenOptions={{
                                       headerShown: false,
-                                      // Enable swipe-back gesture on details page
+                                      // Enable native swipe-back gesture on mobile
                                       gestureEnabled: !Platform.isTV,
                                       gestureDirection: 'horizontal',
-                                      animation: Platform.isTV ? 'none' : 'slide_from_right',
-                                    }}
-                                  />
-                                  <Stack.Screen
-                                    name="player"
-                                    options={{ presentation: Platform.isTV ? 'card' : 'fullScreenModal' }}
-                                  />
-                                </Stack>
+                                      animation: Platform.isTV ? 'none' : 'default',
+                                      // Freeze inactive screens to free memory - critical for low-RAM devices like Fire Stick
+                                      freezeOnBlur: true,
+                                    }}>
+                                    {/* Drawer as the main screen - uses file-based routing */}
+                                    <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                                    {/* Details should render as a standard screen so it shares navigation affordances */}
+                                    <Stack.Screen
+                                      name="details"
+                                      options={{
+                                        headerShown: false,
+                                        // Enable swipe-back gesture on details page
+                                        gestureEnabled: !Platform.isTV,
+                                        gestureDirection: 'horizontal',
+                                        animation: Platform.isTV ? 'none' : 'slide_from_right',
+                                      }}
+                                    />
+                                    <Stack.Screen
+                                      name="player"
+                                      options={{ presentation: Platform.isTV ? 'card' : 'fullScreenModal' }}
+                                    />
+                                  </Stack>
                                 </SpatialNavigationDeviceTypeProvider>
                               </ThemeProvider>
                             </ToastProvider>

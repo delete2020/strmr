@@ -8,7 +8,17 @@ import { useTheme } from '@/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, View, Animated, ScrollView, Pressable, BackHandler, findNodeHandle } from 'react-native';
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  Animated,
+  ScrollView,
+  Pressable,
+  BackHandler,
+  findNodeHandle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const isAndroidTV = Platform.isTV && Platform.OS === 'android';
@@ -201,8 +211,8 @@ export const CustomMenu = React.memo(function CustomMenu({ isVisible, onClose }:
                   onPress={() => handleItemSelect(item.name)}
                   disabled={disabled}
                   nextFocusLeft={selfTag ?? undefined}
-                  nextFocusUp={isHome ? selfTag ?? undefined : undefined}
-                  nextFocusDown={isLast ? selfTag ?? undefined : undefined}
+                  nextFocusUp={isHome ? (selfTag ?? undefined) : undefined}
+                  nextFocusDown={isLast ? (selfTag ?? undefined) : undefined}
                   style={({ focused }) => [
                     styles.menuItem,
                     focused && !disabled && styles.menuItemFocused,
@@ -213,10 +223,23 @@ export const CustomMenu = React.memo(function CustomMenu({ isVisible, onClose }:
                       <MaterialCommunityIcons
                         name={getMenuIconName(item.name)}
                         size={26}
-                        color={disabled ? theme.colors.text.disabled : focused ? theme.colors.background.base : theme.colors.text.primary}
+                        color={
+                          disabled
+                            ? theme.colors.text.disabled
+                            : focused
+                              ? theme.colors.background.base
+                              : theme.colors.text.primary
+                        }
                         style={[styles.icon, disabled && styles.iconDisabled]}
                       />
-                      <Text style={[styles.menuText, focused && !disabled && styles.menuTextFocused, disabled && styles.menuTextDisabled]}>{item.label}</Text>
+                      <Text
+                        style={[
+                          styles.menuText,
+                          focused && !disabled && styles.menuTextFocused,
+                          disabled && styles.menuTextDisabled,
+                        ]}>
+                        {item.label}
+                      </Text>
                     </>
                   )}
                 </Pressable>
@@ -252,26 +275,32 @@ export const CustomMenu = React.memo(function CustomMenu({ isVisible, onClose }:
                   <SpatialNavigationFocusableView key={item.name} onSelect={() => handleItemSelect(item.name)}>
                     {({ isFocused }: { isFocused: boolean }) => (
                       <Pressable
-                        style={[styles.menuItem, isFocused && !disabled && styles.menuItemFocused, disabled && styles.menuItemDisabled]}
-                        tvParallaxProperties={{ enabled: false }}
-                      >
+                        style={[
+                          styles.menuItem,
+                          isFocused && !disabled && styles.menuItemFocused,
+                          disabled && styles.menuItemDisabled,
+                        ]}
+                        tvParallaxProperties={{ enabled: false }}>
                         <MaterialCommunityIcons
                           name={getMenuIconName(item.name)}
                           size={Platform.isTV ? 38 : 24}
                           color={getIconColor(isFocused)}
                           style={[styles.icon, disabled && styles.iconDisabled]}
                         />
-                        <Text style={[styles.menuText, isFocused && !disabled && styles.menuTextFocused, disabled && styles.menuTextDisabled]}>{item.label}</Text>
+                        <Text
+                          style={[
+                            styles.menuText,
+                            isFocused && !disabled && styles.menuTextFocused,
+                            disabled && styles.menuTextDisabled,
+                          ]}>
+                          {item.label}
+                        </Text>
                       </Pressable>
                     )}
                   </SpatialNavigationFocusableView>
                 );
 
-                return isCurrentRoute ? (
-                  <DefaultFocus key={item.name}>{focusableView}</DefaultFocus>
-                ) : (
-                  focusableView
-                );
+                return isCurrentRoute ? <DefaultFocus key={item.name}>{focusableView}</DefaultFocus> : focusableView;
               })}
             </SpatialNavigationNode>
           </ScrollView>

@@ -453,49 +453,49 @@ export default function SearchScreen() {
                             onSelect={() => handleResultPress(item)}
                             onFocus={() => scrollToRow(rowKey)}>
                             {({ isFocused }: { isFocused: boolean }) => (
-                                <View style={[styles.card, isFocused && styles.cardFocused]}>
-                                  <View style={styles.cardImageContainer}>
-                                    {item.poster?.url ? (
-                                      <Image
-                                        key={`img-${cardKey}`}
-                                        source={{ uri: item.poster.url }}
-                                        style={styles.cardImage}
-                                        resizeMode="cover"
-                                        fadeDuration={0}
-                                        // Optimize image rendering
-                                        {...(Platform.isTV && {
-                                          progressiveRenderingEnabled: true,
-                                          cache: 'force-cache' as const,
-                                        })}
-                                      />
-                                    ) : (
-                                      <View style={styles.placeholder}>
-                                        <Text style={styles.placeholderText}>No Image</Text>
-                                      </View>
-                                    )}
-                                    {item.mediaType && (
-                                      <View style={styles.badge}>
-                                        <Text style={styles.badgeText}>
-                                          {item.mediaType === 'series' ? 'TV' : 'MOVIE'}
-                                        </Text>
-                                      </View>
-                                    )}
-                                  </View>
-                                  <View style={styles.cardTextContainer}>
-                                    <LinearGradient
-                                      pointerEvents="none"
-                                      colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
-                                      locations={[0, 0.6, 1]}
-                                      start={{ x: 0.5, y: 0 }}
-                                      end={{ x: 0.5, y: 1 }}
-                                      style={styles.cardTextGradient}
+                              <View style={[styles.card, isFocused && styles.cardFocused]}>
+                                <View style={styles.cardImageContainer}>
+                                  {item.poster?.url ? (
+                                    <Image
+                                      key={`img-${cardKey}`}
+                                      source={{ uri: item.poster.url }}
+                                      style={styles.cardImage}
+                                      resizeMode="cover"
+                                      fadeDuration={0}
+                                      // Optimize image rendering
+                                      {...(Platform.isTV && {
+                                        progressiveRenderingEnabled: true,
+                                        cache: 'force-cache' as const,
+                                      })}
                                     />
-                                    <Text style={styles.cardTitle} numberOfLines={2}>
-                                      {item.name}
-                                    </Text>
-                                    {item.year ? <Text style={styles.cardYear}>{item.year}</Text> : null}
-                                  </View>
+                                  ) : (
+                                    <View style={styles.placeholder}>
+                                      <Text style={styles.placeholderText}>No Image</Text>
+                                    </View>
+                                  )}
+                                  {item.mediaType && (
+                                    <View style={styles.badge}>
+                                      <Text style={styles.badgeText}>
+                                        {item.mediaType === 'series' ? 'TV' : 'MOVIE'}
+                                      </Text>
+                                    </View>
+                                  )}
                                 </View>
+                                <View style={styles.cardTextContainer}>
+                                  <LinearGradient
+                                    pointerEvents="none"
+                                    colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
+                                    locations={[0, 0.6, 1]}
+                                    start={{ x: 0.5, y: 0 }}
+                                    end={{ x: 0.5, y: 1 }}
+                                    style={styles.cardTextGradient}
+                                  />
+                                  <Text style={styles.cardTitle} numberOfLines={2}>
+                                    {item.name}
+                                  </Text>
+                                  {item.year ? <Text style={styles.cardYear}>{item.year}</Text> : null}
+                                </View>
+                              </View>
                             )}
                           </SpatialNavigationFocusableView>
                         );
@@ -534,60 +534,60 @@ export default function SearchScreen() {
                   // Blur the TextInput when spatial navigation moves away
                   inputRef.current?.blur();
                 }}>
-              {({ isFocused: textInputFocused }: { isFocused: boolean }) => (
+                {({ isFocused: textInputFocused }: { isFocused: boolean }) => (
                   <Pressable tvParallaxProperties={{ enabled: false }}>
-                  <View
-                    style={[styles.searchInputWrapper, textInputFocused && styles.searchInputWrapperFocused]}
-                    pointerEvents={isMenuOpen ? 'none' : 'auto'}>
-                    <View style={styles.searchInputContent}>
-                      {!isCompact && (
-                        <MaterialCommunityIcons name="magnify" style={styles.searchIcon} size={isCompact ? 20 : 28} />
-                      )}
-                      <TextInput
-                        ref={inputRef}
-                        style={[styles.searchInput, textInputFocused && styles.searchInputFocused]}
-                        placeholder="Search for movies or TV shows"
-                        placeholderTextColor={theme.colors.text.muted}
-                        {...(Platform.isTV ? { defaultValue: query } : { value: query })}
-                        onChangeText={handleChangeText}
-                        onFocus={handleFocus}
-                        onBlur={handleBlur}
-                        returnKeyType="search"
-                        onSubmitEditing={handleSubmit}
-                        autoCorrect={false}
-                        autoCapitalize="none"
-                        autoComplete="off"
-                        textContentType="none"
-                        spellCheck={false}
-                        clearButtonMode="never"
-                        enablesReturnKeyAutomatically={false}
-                        multiline={false}
-                        numberOfLines={1}
-                        underlineColorAndroid="transparent"
-                        importantForAutofill="no"
-                        disableFullscreenUI={true}
-                        editable={Platform.isTV ? textInputFocused && !isMenuOpen : !isMenuOpen}
-                        {...(Platform.OS === 'ios' &&
-                          Platform.isTV && {
-                          keyboardAppearance: 'dark',
-                        })}
-                      />
-                      {showClearButton ? (
-                        <Pressable
-                          accessibilityHint="Clears the current search"
-                          accessibilityLabel="Clear search"
-                          hitSlop={10}
-                          onPress={handleClearSearch}
-                          style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}>
-                          <MaterialCommunityIcons
-                            name="close"
-                            style={styles.clearButtonIcon}
-                            size={isCompact ? 22 : 26}
-                          />
-                        </Pressable>
-                      ) : null}
+                    <View
+                      style={[styles.searchInputWrapper, textInputFocused && styles.searchInputWrapperFocused]}
+                      pointerEvents={isMenuOpen ? 'none' : 'auto'}>
+                      <View style={styles.searchInputContent}>
+                        {!isCompact && (
+                          <MaterialCommunityIcons name="magnify" style={styles.searchIcon} size={isCompact ? 20 : 28} />
+                        )}
+                        <TextInput
+                          ref={inputRef}
+                          style={[styles.searchInput, textInputFocused && styles.searchInputFocused]}
+                          placeholder="Search for movies or TV shows"
+                          placeholderTextColor={theme.colors.text.muted}
+                          {...(Platform.isTV ? { defaultValue: query } : { value: query })}
+                          onChangeText={handleChangeText}
+                          onFocus={handleFocus}
+                          onBlur={handleBlur}
+                          returnKeyType="search"
+                          onSubmitEditing={handleSubmit}
+                          autoCorrect={false}
+                          autoCapitalize="none"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          clearButtonMode="never"
+                          enablesReturnKeyAutomatically={false}
+                          multiline={false}
+                          numberOfLines={1}
+                          underlineColorAndroid="transparent"
+                          importantForAutofill="no"
+                          disableFullscreenUI={true}
+                          editable={Platform.isTV ? textInputFocused && !isMenuOpen : !isMenuOpen}
+                          {...(Platform.OS === 'ios' &&
+                            Platform.isTV && {
+                              keyboardAppearance: 'dark',
+                            })}
+                        />
+                        {showClearButton ? (
+                          <Pressable
+                            accessibilityHint="Clears the current search"
+                            accessibilityLabel="Clear search"
+                            hitSlop={10}
+                            onPress={handleClearSearch}
+                            style={({ pressed }) => [styles.clearButton, pressed && styles.clearButtonPressed]}>
+                            <MaterialCommunityIcons
+                              name="close"
+                              style={styles.clearButtonIcon}
+                              size={isCompact ? 22 : 26}
+                            />
+                          </Pressable>
+                        ) : null}
+                      </View>
                     </View>
-                  </View>
                   </Pressable>
                 )}
               </SpatialNavigationFocusableView>
@@ -675,11 +675,11 @@ const createStyles = (theme: NovaTheme, screenWidth: number, _screenHeight: numb
       borderWidth: 3,
       ...(Platform.isTV
         ? {
-          shadowColor: theme.colors.accent.primary,
-          shadowOpacity: 0.4,
-          shadowOffset: { width: 0, height: 4 },
-          shadowRadius: 12,
-        }
+            shadowColor: theme.colors.accent.primary,
+            shadowOpacity: 0.4,
+            shadowOffset: { width: 0, height: 4 },
+            shadowRadius: 12,
+          }
         : null),
     },
     clearButton: {
@@ -790,9 +790,9 @@ const createStyles = (theme: NovaTheme, screenWidth: number, _screenHeight: numb
       ...(Platform.isTV ? theme.typography.body.lg : theme.typography.body.md),
       ...(Platform.isTV && Platform.OS === 'ios'
         ? {
-          fontSize: Math.round(theme.typography.body.lg.fontSize * 1.5),
-          lineHeight: Math.round(theme.typography.body.lg.lineHeight * 1.5),
-        }
+            fontSize: Math.round(theme.typography.body.lg.fontSize * 1.5),
+            lineHeight: Math.round(theme.typography.body.lg.lineHeight * 1.5),
+          }
         : null),
       color: theme.colors.text.primary,
       textAlign: 'center',
@@ -803,9 +803,9 @@ const createStyles = (theme: NovaTheme, screenWidth: number, _screenHeight: numb
       ...(Platform.isTV ? theme.typography.body.md : theme.typography.caption.sm),
       ...(Platform.isTV && Platform.OS === 'ios'
         ? {
-          fontSize: Math.round(theme.typography.body.md.fontSize * 1.25),
-          lineHeight: Math.round(theme.typography.body.md.lineHeight * 1.25),
-        }
+            fontSize: Math.round(theme.typography.body.md.fontSize * 1.25),
+            lineHeight: Math.round(theme.typography.body.md.lineHeight * 1.25),
+          }
         : null),
       color: theme.colors.text.secondary,
       textAlign: 'center',

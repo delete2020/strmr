@@ -29,8 +29,15 @@ import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LayoutChangeEvent, View as RNView } from 'react-native';
 import { Image } from '@/components/Image';
-import { FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { FadeOut, Layout, useAnimatedRef, scrollTo as reanimatedScrollTo, runOnUI, useSharedValue, useAnimatedReaction, withTiming, Easing } from 'react-native-reanimated';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  useAnimatedRef,
+  scrollTo as reanimatedScrollTo,
+  useSharedValue,
+  useAnimatedReaction,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 
 // Scroll animation duration for vertical scrolling between shelves (milliseconds)
 // Library default for horizontal is 200ms. Using 450ms for vertical for a smoother feel.
@@ -216,8 +223,16 @@ function IndexScreen() {
     hideFromContinueWatching,
   } = useContinueWatching();
   const { refresh: refreshUserProfiles, activeUserId } = useUserProfiles();
-  const { data: trendingMovies, error: trendingMoviesError, refetch: refetchTrendingMovies } = useTrendingMovies(activeUserId ?? undefined);
-  const { data: trendingTVShows, error: trendingTVShowsError, refetch: refetchTrendingTVShows } = useTrendingTVShows(activeUserId ?? undefined);
+  const {
+    data: trendingMovies,
+    error: trendingMoviesError,
+    refetch: refetchTrendingMovies,
+  } = useTrendingMovies(activeUserId ?? undefined);
+  const {
+    data: trendingTVShows,
+    error: trendingTVShowsError,
+    refetch: refetchTrendingTVShows,
+  } = useTrendingTVShows(activeUserId ?? undefined);
   const safeAreaInsets = useSafeAreaInsets();
   // Use Reanimated's animated ref for UI thread scrolling
   const scrollViewRef = useAnimatedRef<Animated.ScrollView>();
@@ -245,7 +260,15 @@ function IndexScreen() {
   const isInitialLoadRef = React.useRef(true);
   // Track if we've been focused before (to detect navigation returns vs initial load)
   const hasBeenFocusedRef = React.useRef(false);
-  const { loading: settingsLoading, error: settingsError, settings, userSettings, lastLoadedAt: settingsLastLoadedAt, isBackendReachable, retryCountdown } = useBackendSettings();
+  const {
+    loading: settingsLoading,
+    error: settingsError,
+    settings,
+    userSettings,
+    lastLoadedAt: settingsLastLoadedAt,
+    isBackendReachable,
+    retryCountdown,
+  } = useBackendSettings();
   const { showToast } = useToast();
   const hasAuthFailureRef = React.useRef(false);
   const previousSettingsLoadedAtRef = React.useRef<number | null>(null);
@@ -312,59 +335,62 @@ function IndexScreen() {
   }, [errorEntries, hasAuthFailure, showToast, backendLoadError, isBackendReachable]);
 
   // Shelf scrolling with position caching - uses Reanimated shared value for fast custom animation on Android TV
-  const scrollToShelf = useCallback((shelfKey: string, skipAnimation = false) => {
-    if (!Platform.isTV) {
-      return;
-    }
-
-    const shouldAnimate = !skipAnimation && !isInitialLoadRef.current;
-
-    // Helper to perform the scroll with fast custom animation on Android TV
-    const performScroll = (targetY: number) => {
-      if (isAndroidTV) {
-        // Use shared value with withTiming for fast, controllable animation
-        if (shouldAnimate) {
-          shelfScrollTargetY.value = withTiming(targetY, {
-            duration: TV_SCROLL_DURATION_MS,
-            easing: Easing.out(Easing.cubic),
-          });
-        } else {
-          // Instant scroll (no animation)
-          shelfScrollTargetY.value = targetY;
-        }
-      } else {
-        // Apple TV uses native scrollTo (already fast)
-        scrollViewRef.current?.scrollTo({ y: targetY, animated: shouldAnimate });
+  const scrollToShelf = useCallback(
+    (shelfKey: string, skipAnimation = false) => {
+      if (!Platform.isTV) {
+        return;
       }
-    };
 
-    // Check cache first (avoids expensive measureLayout on Android)
-    const cachedPosition = shelfPositionsRef.current[shelfKey];
-    if (cachedPosition !== undefined) {
-      performScroll(cachedPosition);
-      return;
-    }
+      const shouldAnimate = !skipAnimation && !isInitialLoadRef.current;
 
-    // Fall back to measureLayout for first access, then cache
-    const shelfRef = shelfRefs.current[shelfKey];
-    const scrollViewNode = scrollViewRef.current;
-    if (!shelfRef || !scrollViewNode) {
-      return;
-    }
+      // Helper to perform the scroll with fast custom animation on Android TV
+      const performScroll = (targetY: number) => {
+        if (isAndroidTV) {
+          // Use shared value with withTiming for fast, controllable animation
+          if (shouldAnimate) {
+            shelfScrollTargetY.value = withTiming(targetY, {
+              duration: TV_SCROLL_DURATION_MS,
+              easing: Easing.out(Easing.cubic),
+            });
+          } else {
+            // Instant scroll (no animation)
+            shelfScrollTargetY.value = targetY;
+          }
+        } else {
+          // Apple TV uses native scrollTo (already fast)
+          scrollViewRef.current?.scrollTo({ y: targetY, animated: shouldAnimate });
+        }
+      };
 
-    shelfRef.measureLayout(
-      scrollViewNode as any,
-      (_left, top) => {
-        const targetY = Math.max(0, top);
-        // Cache the position for future use
-        shelfPositionsRef.current[shelfKey] = targetY;
-        performScroll(targetY);
-      },
-      () => {
-        // Silently fail - no console spam
-      },
-    );
-  }, [scrollViewRef, shelfScrollTargetY]);
+      // Check cache first (avoids expensive measureLayout on Android)
+      const cachedPosition = shelfPositionsRef.current[shelfKey];
+      if (cachedPosition !== undefined) {
+        performScroll(cachedPosition);
+        return;
+      }
+
+      // Fall back to measureLayout for first access, then cache
+      const shelfRef = shelfRefs.current[shelfKey];
+      const scrollViewNode = scrollViewRef.current;
+      if (!shelfRef || !scrollViewNode) {
+        return;
+      }
+
+      shelfRef.measureLayout(
+        scrollViewNode as any,
+        (_left, top) => {
+          const targetY = Math.max(0, top);
+          // Cache the position for future use
+          shelfPositionsRef.current[shelfKey] = targetY;
+          performScroll(targetY);
+        },
+        () => {
+          // Silently fail - no console spam
+        },
+      );
+    },
+    [scrollViewRef, shelfScrollTargetY],
+  );
 
   const registerShelfRef = useCallback((key: string, ref: RNView | null) => {
     shelfRefs.current[key] = ref;
@@ -482,20 +508,47 @@ function IndexScreen() {
     // Only reset shelf focus when RETURNING from navigation (e.g., details page)
     // Not on initial load - that causes unnecessary remounts
     if (isReturnFromNavigation && Platform.isTV) {
-      setShelfResetCounter(prev => prev + 1);
+      setShelfResetCounter((prev) => prev + 1);
     }
 
-    // Programmatically grab focus to the first continue watching item and scroll to show it
+    // Programmatically grab focus to the first item of the first shelf and scroll to show it
     // On Android TV, let AndroidTVFocusAnchor handle initial focus, only grab focus on navigation return
-    if (Platform.isTV && continueWatchingItems && continueWatchingItems.length > 0) {
-      const firstItem = continueWatchingItems[0];
-      const focusId = `continue-watching-card-${firstItem.seriesId}`;
+    // Note: We compute the first shelf inline here since desktopShelves may not be ready yet
+    const shelfConfig = userSettings?.homeShelves?.shelves ??
+      settings?.homeShelves?.shelves ?? [
+        { id: 'continue-watching', name: 'Continue Watching', enabled: true, order: 0 },
+        { id: 'watchlist', name: 'Your Watchlist', enabled: true, order: 1 },
+        { id: 'trending-movies', name: 'Trending Movies', enabled: true, order: 2 },
+        { id: 'trending-tv', name: 'Trending TV Shows', enabled: true, order: 3 },
+      ];
 
-      // Scroll to the continue watching shelf position
+    // Map shelf IDs to their card data for focus computation
+    const shelfCardMap: Record<string, CardData[]> = {
+      'continue-watching': continueWatchingCards,
+      watchlist: watchlistCards,
+      'trending-movies': trendingMovieCards,
+      'trending-tv': trendingShowCards,
+    };
+
+    // Find the first enabled shelf (by user's order) that has cards
+    const sortedShelfConfigs = [...shelfConfig].filter((c) => c.enabled).sort((a, b) => a.order - b.order);
+    const firstShelfWithCards = sortedShelfConfigs.find((config) => {
+      const cards = shelfCardMap[config.id];
+      return cards && cards.length > 0;
+    });
+
+    if (Platform.isTV && firstShelfWithCards) {
+      const cards = shelfCardMap[firstShelfWithCards.id];
+      const firstCard = cards[0];
+      const rawId = String(firstCard.id ?? 0);
+      const cardKey = rawId.includes(':S') ? rawId.split(':S')[0] : rawId;
+      const focusId = `${firstShelfWithCards.id}-card-${cardKey}`;
+
+      // Scroll to the first shelf position
       // On initial load: skip animation, on return: also skip to avoid jarring scroll
       // This ensures the view is in the right position before/with focus grab
       setTimeout(() => {
-        scrollToShelf('continue-watching', true); // Skip animation
+        scrollToShelf(firstShelfWithCards.id, true); // Skip animation
       }, 50);
 
       // Only programmatically grab focus when returning from navigation
@@ -513,7 +566,7 @@ function IndexScreen() {
         }, 150);
       }
     } else if (Platform.isTV) {
-      // No continue watching items - mark initial load complete anyway
+      // No shelves with cards - mark initial load complete anyway
       isInitialLoadRef.current = false;
     }
 
@@ -534,6 +587,7 @@ function IndexScreen() {
         // Silent refresh failed - not critical
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally omit card arrays and settings to prevent focus grab on every data update
   }, [isFocused, settingsLoading, hasAuthFailure, refreshContinueWatching, refreshWatchlist, scrollToShelf]);
 
   useEffect(() => {
@@ -713,8 +767,9 @@ function IndexScreen() {
     // Detect portrait from URL pattern instead of fetching image
     // Poster URLs typically contain width indicators (w185, w342, w500, w780) for portrait images
     // Backdrop URLs use larger widths (w780, w1280, original) for landscape
-    const isPosterUrl = /\/w(?:185|342|500)\//i.test(imageUrl) ||
-                        (!focusedDesktopCard.backdropUrl && focusedDesktopCard.posterUrl === imageUrl);
+    const isPosterUrl =
+      /\/w(?:185|342|500)\//i.test(imageUrl) ||
+      (!focusedDesktopCard.backdropUrl && focusedDesktopCard.posterUrl === imageUrl);
 
     if (isPosterUrl) {
       // Portrait aspect ratio (2:3)
@@ -861,18 +916,18 @@ function IndexScreen() {
 
       const metadata = isContinueWatchingSeries
         ? continueWatchingItems?.find((state) => {
-          // Card ID format: "tmdb:tv:127235:S03E09"
-          // Series ID format: "tmdb:tv:127235"
-          // Remove the episode code (":S03E09") from the end
-          const cardIdWithoutEpisode = String(card.id).replace(/:S\d{2}E\d{2}$/i, '');
-          console.log('[ContinueWatching] Metadata lookup:', {
-            cardId: card.id,
-            cardIdWithoutEpisode,
-            seriesId: state.seriesId,
-            matches: state.seriesId === cardIdWithoutEpisode,
-          });
-          return state.seriesId === cardIdWithoutEpisode;
-        })
+            // Card ID format: "tmdb:tv:127235:S03E09"
+            // Series ID format: "tmdb:tv:127235"
+            // Remove the episode code (":S03E09") from the end
+            const cardIdWithoutEpisode = String(card.id).replace(/:S\d{2}E\d{2}$/i, '');
+            console.log('[ContinueWatching] Metadata lookup:', {
+              cardId: card.id,
+              cardIdWithoutEpisode,
+              seriesId: state.seriesId,
+              matches: state.seriesId === cardIdWithoutEpisode,
+            });
+            return state.seriesId === cardIdWithoutEpisode;
+          })
         : isContinueWatchingMovie
           ? continueWatchingItems?.find((state) => state.seriesId === String(card.id))
           : null;
@@ -1132,12 +1187,13 @@ function IndexScreen() {
     if (shouldUseMobileLayout) return [];
 
     // Get shelf configuration from user settings, fall back to global settings, then default order
-    const shelfConfig = userSettings?.homeShelves?.shelves ?? settings?.homeShelves?.shelves ?? [
-      { id: 'continue-watching', name: 'Continue Watching', enabled: true, order: 0 },
-      { id: 'watchlist', name: 'Your Watchlist', enabled: true, order: 1 },
-      { id: 'trending-movies', name: 'Trending Movies', enabled: true, order: 2 },
-      { id: 'trending-tv', name: 'Trending TV Shows', enabled: true, order: 3 },
-    ];
+    const shelfConfig = userSettings?.homeShelves?.shelves ??
+      settings?.homeShelves?.shelves ?? [
+        { id: 'continue-watching', name: 'Continue Watching', enabled: true, order: 0 },
+        { id: 'watchlist', name: 'Your Watchlist', enabled: true, order: 1 },
+        { id: 'trending-movies', name: 'Trending Movies', enabled: true, order: 2 },
+        { id: 'trending-tv', name: 'Trending TV Shows', enabled: true, order: 3 },
+      ];
 
     // Map shelf IDs to their data
     const shelfDataMap: Record<
@@ -1235,7 +1291,7 @@ function IndexScreen() {
     return desktopShelves.findIndex((shelf) => shelf.key === focusedShelfKey);
   }, [focusedShelfKey, desktopShelves]);
 
-  const shouldShowTopGradient = focusedShelfIndex > 0;
+  const _shouldShowTopGradient = focusedShelfIndex > 0;
 
   const onDirectionHandledWithoutMovement = useCallback(
     (movement: Direction) => {
@@ -1252,12 +1308,13 @@ function IndexScreen() {
     }
 
     // Get shelf configuration from user settings, fall back to global settings, then default order
-    const mobileShelfConfig = userSettings?.homeShelves?.shelves ?? settings?.homeShelves?.shelves ?? [
-      { id: 'continue-watching', name: 'Continue Watching', enabled: true, order: 0 },
-      { id: 'watchlist', name: 'Your Watchlist', enabled: true, order: 1 },
-      { id: 'trending-movies', name: 'Trending Movies', enabled: true, order: 2 },
-      { id: 'trending-tv', name: 'Trending TV Shows', enabled: true, order: 3 },
-    ];
+    const mobileShelfConfig = userSettings?.homeShelves?.shelves ??
+      settings?.homeShelves?.shelves ?? [
+        { id: 'continue-watching', name: 'Continue Watching', enabled: true, order: 0 },
+        { id: 'watchlist', name: 'Your Watchlist', enabled: true, order: 1 },
+        { id: 'trending-movies', name: 'Trending Movies', enabled: true, order: 2 },
+        { id: 'trending-tv', name: 'Trending TV Shows', enabled: true, order: 3 },
+      ];
 
     // Map shelf IDs to their data for mobile
     const mobileShelfDataMap: Record<
@@ -1300,8 +1357,7 @@ function IndexScreen() {
             contentInsetAdjustmentBehavior="never"
             automaticallyAdjustContentInsets={false}
             onLayout={handleMobileScrollLayout}
-            onContentSizeChange={handleMobileContentSizeChange}
-          >
+            onContentSizeChange={handleMobileContentSizeChange}>
             <View style={mobileStyles.hero}>
               <Image source={heroSource.headerImage} style={mobileStyles.heroImage} contentFit="cover" />
               <LinearGradient
@@ -1358,14 +1414,16 @@ function IndexScreen() {
   return (
     <SpatialNavigationRoot
       isActive={isFocused && !isMenuOpen}
-      onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}
-    >
+      onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}>
       {/* Android TV focus anchor - captures initial native focus and transfers to spatial navigation */}
       <AndroidTVFocusAnchor targetFocusId={androidTVInitialFocusId} />
       <Stack.Screen options={{ headerShown: false }} />
       <View ref={pageRef} style={desktopStyles?.styles.page} onLayout={handleDesktopLayout}>
         {Platform.isTV && (
-          <View style={desktopStyles?.styles.topSpacer} pointerEvents="none" renderToHardwareTextureAndroid={isAndroidTV}>
+          <View
+            style={desktopStyles?.styles.topSpacer}
+            pointerEvents="none"
+            renderToHardwareTextureAndroid={isAndroidTV}>
             {focusedDesktopCard &&
               heroImageDimensions &&
               (() => {
@@ -1377,18 +1435,38 @@ function IndexScreen() {
                   return (
                     <View style={desktopStyles?.styles.topContent}>
                       <View style={desktopStyles?.styles.topHeroContainer}>
-                        <Image source={imageUrl} style={desktopStyles?.styles.topHeroImage} contentFit="cover" transition={0} />
+                        <Image
+                          source={imageUrl}
+                          style={desktopStyles?.styles.topHeroImage}
+                          contentFit="cover"
+                          transition={0}
+                        />
                       </View>
                       <View style={desktopStyles?.styles.topTextContainer}>
                         <Text style={desktopStyles?.styles.topTitle} numberOfLines={2}>
                           {focusedDesktopCard.title}
                         </Text>
                         {focusedDesktopCard.year && (
-                          <Text style={[desktopStyles?.styles.topYear, { fontSize: desktopStyles?.styles.topYear.fontSize * 1.25, lineHeight: desktopStyles?.styles.topYear.lineHeight * 1.25 }]}>
+                          <Text
+                            style={[
+                              desktopStyles?.styles.topYear,
+                              {
+                                fontSize: desktopStyles?.styles.topYear.fontSize * 1.25,
+                                lineHeight: desktopStyles?.styles.topYear.lineHeight * 1.25,
+                              },
+                            ]}>
                             {focusedDesktopCard.year}
                           </Text>
                         )}
-                        <Text style={[desktopStyles?.styles.topDescription, { fontSize: desktopStyles?.styles.topDescription.fontSize * 1.25, lineHeight: desktopStyles?.styles.topDescription.lineHeight * 1.25 }]} numberOfLines={4}>
+                        <Text
+                          style={[
+                            desktopStyles?.styles.topDescription,
+                            {
+                              fontSize: desktopStyles?.styles.topDescription.fontSize * 1.25,
+                              lineHeight: desktopStyles?.styles.topDescription.lineHeight * 1.25,
+                            },
+                          ]}
+                          numberOfLines={4}>
                           {focusedDesktopCard.description}
                         </Text>
                       </View>
@@ -1417,7 +1495,9 @@ function IndexScreen() {
                       <Text style={desktopStyles?.styles.topTitle} numberOfLines={2}>
                         {focusedDesktopCard.title}
                       </Text>
-                      {focusedDesktopCard.year && <Text style={desktopStyles?.styles.topYear}>{focusedDesktopCard.year}</Text>}
+                      {focusedDesktopCard.year && (
+                        <Text style={desktopStyles?.styles.topYear}>{focusedDesktopCard.year}</Text>
+                      )}
                       <Text style={desktopStyles?.styles.topDescription} numberOfLines={6}>
                         {focusedDesktopCard.description}
                       </Text>
@@ -1459,8 +1539,7 @@ function IndexScreen() {
             removeClippedSubviews={Platform.isTV && Platform.OS === 'ios'}
             scrollEventThrottle={16}
             onLayout={handleDesktopScrollLayout}
-            onContentSizeChange={handleDesktopContentSizeChange}
-          >
+            onContentSizeChange={handleDesktopContentSizeChange}>
             {!Platform.isTV && (
               <View style={desktopStyles?.styles.hero}>
                 <Image source={heroSource.headerImage} style={desktopStyles?.styles.heroImage} contentFit="cover" />
@@ -1510,12 +1589,12 @@ function IndexScreen() {
             data={
               focusedDesktopCard
                 ? {
-                  title: focusedDesktopCard.title,
-                  description: focusedDesktopCard.description,
-                  headerImage: focusedDesktopCard.headerImage,
-                  year: focusedDesktopCard.year,
-                  mediaType: focusedDesktopCard.mediaType,
-                }
+                    title: focusedDesktopCard.title,
+                    description: focusedDesktopCard.description,
+                    headerImage: focusedDesktopCard.headerImage,
+                    year: focusedDesktopCard.year,
+                    mediaType: focusedDesktopCard.mediaType,
+                  }
                 : null
             }
           />
@@ -1604,8 +1683,7 @@ function VirtualizedShelf({
             lastFocusTimeRef.current = now;
             onCardFocus(card);
             onRowFocus(shelfKey);
-          }}
-        >
+          }}>
           {({ isFocused }: { isFocused: boolean }) => {
             // Android TV rendering with 2x badge and full content
             if (isAndroidTV) {
@@ -1613,14 +1691,8 @@ function VirtualizedShelf({
                 <Pressable
                   style={[styles.card, isFocused && styles.cardFocused]}
                   renderToHardwareTextureAndroid
-                  tvParallaxProperties={{ enabled: false }}
-                >
-                  <Image
-                    source={card.cardImage}
-                    style={styles.cardImage}
-                    contentFit="cover"
-                    transition={0}
-                  />
+                  tvParallaxProperties={{ enabled: false }}>
+                  <Image source={card.cardImage} style={styles.cardImage} contentFit="cover" transition={0} />
                   {card.percentWatched !== undefined && card.percentWatched >= MIN_CONTINUE_WATCHING_PERCENT && (
                     <View style={styles.progressBadgeAndroidTV}>
                       <Text style={styles.progressBadgeTextAndroidTV}>{Math.round(card.percentWatched)}%</Text>
@@ -1647,8 +1719,7 @@ function VirtualizedShelf({
             return (
               <Pressable
                 style={[styles.card, isFocused && styles.cardFocused]}
-                tvParallaxProperties={{ enabled: false }}
-              >
+                tvParallaxProperties={{ enabled: false }}>
                 <Image
                   key={`img-${cardKey}`}
                   source={card.cardImage}

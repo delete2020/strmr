@@ -2,7 +2,6 @@ import React, { useCallback, useMemo, useRef } from 'react';
 
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   Platform,
   Pressable,
@@ -13,7 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Animated, { Easing, FadeOut, Layout } from 'react-native-reanimated';
-import { DefaultFocus, SpatialNavigationNode, SpatialNavigationScrollView } from '@/services/tv-navigation';
+import { DefaultFocus, SpatialNavigationNode } from '@/services/tv-navigation';
 import { Title } from '../services/api';
 import { useResponsiveColumns } from '../hooks/useResponsiveColumns';
 import type { ColumnOverride } from '../hooks/useResponsiveColumns';
@@ -257,28 +256,31 @@ const MediaGrid = React.memo(
     const mainScrollViewRef = useRef<any>(null);
 
     // Scroll to row when it receives focus (for TV navigation)
-    const scrollToRow = useCallback((rowKey: string) => {
-      if (!Platform.isTV || !mainScrollViewRef.current || disableFocusScroll) {
-        return;
-      }
+    const scrollToRow = useCallback(
+      (rowKey: string) => {
+        if (!Platform.isTV || !mainScrollViewRef.current || disableFocusScroll) {
+          return;
+        }
 
-      const rowRef = rowRefs.current[rowKey];
-      if (!rowRef) {
-        return;
-      }
+        const rowRef = rowRefs.current[rowKey];
+        if (!rowRef) {
+          return;
+        }
 
-      const scrollView = mainScrollViewRef.current;
-      rowRef.measureLayout(
-        scrollView as any,
-        (_left, top) => {
-          const targetY = Math.max(0, top - 20);
-          scrollView?.scrollTo({ y: targetY, animated: true });
-        },
-        () => {
-          // silently ignore failures
-        },
-      );
-    }, [disableFocusScroll]);
+        const scrollView = mainScrollViewRef.current;
+        rowRef.measureLayout(
+          scrollView as any,
+          (_left, top) => {
+            const targetY = Math.max(0, top - 20);
+            scrollView?.scrollTo({ y: targetY, animated: true });
+          },
+          () => {
+            // silently ignore failures
+          },
+        );
+      },
+      [disableFocusScroll],
+    );
 
     const keyExtractor = (item: DisplayTitle, index: number) => {
       if (item.uniqueKey) {

@@ -16,7 +16,6 @@ import VideoPlayer, {
 import RemoteControlManager from '@/services/remote-control/RemoteControlManager';
 import { SupportedKeys } from '@/services/remote-control/SupportedKeys';
 import {
-  DefaultFocus,
   SpatialNavigationNode,
   SpatialNavigationRoot,
   useLockSpatialNavigation,
@@ -26,25 +25,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Animated,
-  BackHandler,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Animated, BackHandler, Platform, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 // TVMenuControl is available on tvOS but not typed in RN types
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const TVMenuControl: { enableTVMenuKey?: () => void; disableTVMenuKey?: () => void } | undefined =
-  Platform.isTV ? require('react-native').TVMenuControl : undefined;
+const TVMenuControl: { enableTVMenuKey?: () => void; disableTVMenuKey?: () => void } | undefined = Platform.isTV
+  ? require('react-native').TVMenuControl
+  : undefined;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-
-import { detectDolbyVision } from '@/app/details/playback';
 import { useBackendSettings } from '@/components/BackendSettingsContext';
 import { useLoadingScreen } from '@/components/LoadingScreenContext';
 import { useToast } from '@/components/ToastContext';
@@ -1727,7 +1716,10 @@ export default function PlayerScreen() {
   }, [isHlsStream, hasDolbyVision, initialStartOffset, applyPendingSessionSeek]);
 
   // Debug: track last logged progress time for subtitle debugging
-  const lastSubtitleDebugLogRef = useRef<{ time: number; logged: number; postSeekLogCount?: number }>({ time: 0, logged: 0 });
+  const lastSubtitleDebugLogRef = useRef<{ time: number; logged: number; postSeekLogCount?: number }>({
+    time: 0,
+    logged: 0,
+  });
 
   // Debug: track progress event count for diagnosing start position issues
   const progressEventCountRef = useRef(0);
@@ -1775,7 +1767,7 @@ export default function PlayerScreen() {
       const now = Date.now();
       const timeDiff = Math.abs(absoluteTime - lastSubtitleDebugLogRef.current.time);
       const isJump = timeDiff > 10;
-      const shouldLog = (now - lastSubtitleDebugLogRef.current.logged) > 5000 || isJump;
+      const shouldLog = now - lastSubtitleDebugLogRef.current.logged > 5000 || isJump;
       if (shouldLog && isHlsStream) {
         console.log('[player] progress update (subtitle debug)', {
           playerTime: time.toFixed(2),
@@ -2962,7 +2954,8 @@ export default function PlayerScreen() {
           const primaryVideo = metadata.videoStreams[0];
           const isPQ = primaryVideo.colorTransfer === 'smpte2084';
           const isBT2020 = primaryVideo.colorPrimaries === 'bt2020';
-          const isHDR10 = (isPQ && isBT2020) || primaryVideo.hdrFormat === 'HDR10' || primaryVideo.hdrFormat === 'HDR10+';
+          const isHDR10 =
+            (isPQ && isBT2020) || primaryVideo.hdrFormat === 'HDR10' || primaryVideo.hdrFormat === 'HDR10+';
 
           setVideoColorInfo({
             colorTransfer: primaryVideo.colorTransfer,
@@ -2999,7 +2992,8 @@ export default function PlayerScreen() {
 
         // Check for user preference first, then fall back to metadata selection
         let selectedAudioIndex = metadata.selectedAudioIndex;
-        const preferredAudioLanguage = userSettings?.playback?.preferredAudioLanguage ?? settings?.playback?.preferredAudioLanguage;
+        const preferredAudioLanguage =
+          userSettings?.playback?.preferredAudioLanguage ?? settings?.playback?.preferredAudioLanguage;
         if (preferredAudioLanguage) {
           const preferredAudioIndex = findAudioTrackByLanguage(metadata.audioStreams ?? [], preferredAudioLanguage);
           if (preferredAudioIndex !== null) {
@@ -3035,9 +3029,16 @@ export default function PlayerScreen() {
 
         // Check for user preference first, then fall back to metadata selection
         let selectedSubtitleIndex = metadata.selectedSubtitleIndex;
-        const preferredSubtitleLanguage = userSettings?.playback?.preferredSubtitleLanguage ?? settings?.playback?.preferredSubtitleLanguage;
-        const preferredSubtitleModeRaw = userSettings?.playback?.preferredSubtitleMode ?? settings?.playback?.preferredSubtitleMode;
-        const preferredSubtitleMode = (preferredSubtitleModeRaw === 'on' || preferredSubtitleModeRaw === 'off' || preferredSubtitleModeRaw === 'forced-only') ? preferredSubtitleModeRaw : undefined;
+        const preferredSubtitleLanguage =
+          userSettings?.playback?.preferredSubtitleLanguage ?? settings?.playback?.preferredSubtitleLanguage;
+        const preferredSubtitleModeRaw =
+          userSettings?.playback?.preferredSubtitleMode ?? settings?.playback?.preferredSubtitleMode;
+        const preferredSubtitleMode =
+          preferredSubtitleModeRaw === 'on' ||
+          preferredSubtitleModeRaw === 'off' ||
+          preferredSubtitleModeRaw === 'forced-only'
+            ? preferredSubtitleModeRaw
+            : undefined;
 
         if (preferredSubtitleMode !== undefined) {
           const preferredSubtitleIndex = findSubtitleTrackByPreference(
@@ -3174,11 +3175,17 @@ export default function PlayerScreen() {
             const hasPlaybackContext = hasDuration || currentTime > 0 || isVideoBuffering || paused;
             const isTVSeeking = isTvPlatform && seekIndicatorAmount !== 0;
             const shouldRenderControls =
-              !usesSystemManagedControls && (controlsVisible || isModalOpen || isTVSeeking) && (hasPlaybackContext || Platform.isTV);
+              !usesSystemManagedControls &&
+              (controlsVisible || isModalOpen || isTVSeeking) &&
+              (hasPlaybackContext || Platform.isTV);
 
             return shouldRenderControls ? (
               isTvPlatform ? (
-                <TVControlsModal visible={controlsVisible || isTVSeeking} onRequestClose={() => hideControls({ immediate: true })} isChildModalOpen={isModalOpen} isSeeking={isTVSeeking}>
+                <TVControlsModal
+                  visible={controlsVisible || isTVSeeking}
+                  onRequestClose={() => hideControls({ immediate: true })}
+                  isChildModalOpen={isModalOpen}
+                  isSeeking={isTVSeeking}>
                   <ControlsContainerComponent style={controlsContainerStyle} pointerEvents="box-none">
                     <>
                       {/* Top gradient overlay */}
@@ -3194,8 +3201,14 @@ export default function PlayerScreen() {
                         pointerEvents="none"
                       />
                     </>
-                    <Animated.View style={tvOverlayAnimatedStyle} pointerEvents="box-none" renderToHardwareTextureAndroid={true}>
-                      <View style={styles.overlayContent} pointerEvents="box-none" renderToHardwareTextureAndroid={true}>
+                    <Animated.View
+                      style={tvOverlayAnimatedStyle}
+                      pointerEvents="box-none"
+                      renderToHardwareTextureAndroid={true}>
+                      <View
+                        style={styles.overlayContent}
+                        pointerEvents="box-none"
+                        renderToHardwareTextureAndroid={true}>
                         <View style={styles.overlayTopRow} pointerEvents="box-none">
                           <ExitButton onSelect={() => router.back()} onFocus={() => handleFocusChange('exit-button')} />
                           <MediaInfoDisplay

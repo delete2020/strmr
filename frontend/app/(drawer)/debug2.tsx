@@ -11,9 +11,7 @@ import { Stack } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 const FocusableBox = ({ label }: { label: string }) => (
-  <SpatialNavigationFocusableView
-    onFocus={() => console.log(`[debug2] FOCUS: ${label}`)}
-  >
+  <SpatialNavigationFocusableView onFocus={() => console.log(`[debug2] FOCUS: ${label}`)}>
     {({ isFocused }: { isFocused: boolean }) => (
       <View style={[styles.box, isFocused && styles.boxFocused]}>
         <Text style={[styles.label, isFocused && styles.labelFocused]}>{label}</Text>

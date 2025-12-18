@@ -49,12 +49,7 @@ const extractFileName = (value?: string): string => {
 };
 
 // Build a display name for demo mode (matches backend buildDisplayName format)
-const buildDisplayName = (
-  titleName?: string,
-  year?: number,
-  seasonNumber?: number,
-  episodeNumber?: number,
-): string => {
+const buildDisplayName = (titleName?: string, year?: number, seasonNumber?: number, episodeNumber?: number): string => {
   if (!titleName?.trim()) {
     return 'Media';
   }
@@ -132,7 +127,11 @@ const describeUsenetStatus = (result: NZBResult, update: PlaybackResolutionRespo
   }
 };
 
-const describePlaybackStatusMessage = (result: NZBResult, update: PlaybackResolutionResponse, demoMode?: boolean): string | null => {
+const describePlaybackStatusMessage = (
+  result: NZBResult,
+  update: PlaybackResolutionResponse,
+  demoMode?: boolean,
+): string | null => {
   const serviceType = (result.serviceType ?? 'usenet').toLowerCase();
   if (serviceType === 'debrid') {
     return describeDebridStatus(result, update, demoMode);
@@ -165,9 +164,7 @@ export const detectDolbyVision = (
   return primaryVideo.hasDolbyVision === true || primaryVideo.hdrFormat === 'DV';
 };
 
-export const detectHDR10 = (
-  metadata: Awaited<ReturnType<typeof apiService.getVideoMetadata>> | null,
-): boolean => {
+export const detectHDR10 = (metadata: Awaited<ReturnType<typeof apiService.getVideoMetadata>> | null): boolean => {
   if (!metadata?.videoStreams || metadata.videoStreams.length === 0) {
     return false;
   }
@@ -706,7 +703,17 @@ export const initiatePlayback = async (
   const hdrLabel = hasDolbyVision ? ' • Dolby Vision' : hasHDR10 ? ' • HDR10' : '';
   setSelectionInfo(`Stream ready • ${sizeLabel} • status ${playback.healthStatus}${hdrLabel}`);
 
+  console.log(
+    '[initiatePlayback] playbackPreference:',
+    playbackPreference,
+    'Platform.OS:',
+    Platform.OS,
+    'Platform.isTV:',
+    Platform.isTV,
+  );
+
   if (playbackPreference === 'native') {
+    console.log('[initiatePlayback] Using native player (preference is native)');
     launchNativePlayer(streamUrl, headerImage, title, router, {
       ...options,
       ...(hlsDuration ? { durationHint: hlsDuration } : {}),
@@ -723,8 +730,10 @@ export const initiatePlayback = async (
   const player = playbackPreference;
   const label = player === 'outplayer' ? 'Outplayer' : 'Infuse';
   const externalTargets = buildExternalPlayerTargets(player, streamUrl, isIosWeb);
+  console.log('[initiatePlayback] External player:', player, 'targets:', externalTargets, 'isIosWeb:', isIosWeb);
 
   if (externalTargets.length === 0) {
+    console.log('[initiatePlayback] No external targets, falling back to native');
     setSelectionError(`${label} playback is not available on this platform. Launching native player instead.`);
     launchNativePlayer(streamUrl, headerImage, title, router, {
       ...options,

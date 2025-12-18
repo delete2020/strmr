@@ -37,11 +37,7 @@ export const getUnplayableReleases = async (): Promise<UnplayableRelease[]> => {
 /**
  * Add a release to the unplayable list
  */
-export const markReleaseAsUnplayable = async (
-  sourcePath: string,
-  title?: string,
-  reason?: string,
-): Promise<void> => {
+export const markReleaseAsUnplayable = async (sourcePath: string, title?: string, reason?: string): Promise<void> => {
   try {
     const releases = await getUnplayableReleases();
 
@@ -112,14 +108,20 @@ export const isReleaseTitleUnplayable = async (releaseTitle: string): Promise<bo
   }
   const releases = await getUnplayableReleases();
   // Normalize: lowercase, trim, remove file extension
-  const normalizedTitle = releaseTitle.toLowerCase().trim().replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
+  const normalizedTitle = releaseTitle
+    .toLowerCase()
+    .trim()
+    .replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
 
   return releases.some((r) => {
     if (!r.title) {
       return false;
     }
     // Normalize stored title the same way
-    const storedTitle = r.title.toLowerCase().trim().replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
+    const storedTitle = r.title
+      .toLowerCase()
+      .trim()
+      .replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
     // Exact match only - release filenames are specific enough
     return normalizedTitle === storedTitle;
   });
@@ -174,13 +176,19 @@ export const useUnplayableReleases = () => {
         return false;
       }
       // Normalize: lowercase, trim, remove file extension
-      const normalizedTitle = title.toLowerCase().trim().replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
+      const normalizedTitle = title
+        .toLowerCase()
+        .trim()
+        .replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
       return releases.some((r) => {
         if (!r.title) {
           return false;
         }
         // Normalize stored title the same way
-        const storedTitle = r.title.toLowerCase().trim().replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
+        const storedTitle = r.title
+          .toLowerCase()
+          .trim()
+          .replace(/\.(mkv|mp4|avi|m4v|webm|ts)$/i, '');
         // Exact match only - release filenames are specific enough
         return normalizedTitle === storedTitle;
       });

@@ -1,17 +1,11 @@
 import mitt from 'mitt';
-import {
-  BackHandler,
-  DeviceEventEmitter,
-  EventSubscription,
-  HWEvent,
-  Platform,
-  TVEventHandler,
-} from 'react-native';
+import { BackHandler, DeviceEventEmitter, EventSubscription, HWEvent, Platform, TVEventHandler } from 'react-native';
 
 // TVMenuControl and TVEventControl are available on tvOS but not typed in RN types
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const TVMenuControl: { enableTVMenuKey?: () => void; disableTVMenuKey?: () => void } | undefined =
-  Platform.isTV ? require('react-native').TVMenuControl : undefined;
+const TVMenuControl: { enableTVMenuKey?: () => void; disableTVMenuKey?: () => void } | undefined = Platform.isTV
+  ? require('react-native').TVMenuControl
+  : undefined;
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const TVEventControl: { enableTVPanGesture?: () => void; disableTVPanGesture?: () => void } | undefined =

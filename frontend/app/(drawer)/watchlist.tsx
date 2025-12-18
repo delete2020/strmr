@@ -45,11 +45,12 @@ export default function WatchlistScreen() {
     return watchlistTitles.filter((title) => title.mediaType === filter);
   }, [filter, watchlistTitles]);
 
-  const filterOptions: Array<{ key: 'all' | 'movie' | 'series'; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-    { key: 'all', label: 'All', icon: 'grid-outline' },
-    { key: 'movie', label: 'Movies', icon: 'film-outline' },
-    { key: 'series', label: 'TV Shows', icon: 'tv-outline' },
-  ];
+  const filterOptions: Array<{ key: 'all' | 'movie' | 'series'; label: string; icon: keyof typeof Ionicons.glyphMap }> =
+    [
+      { key: 'all', label: 'All', icon: 'grid-outline' },
+      { key: 'movie', label: 'Movies', icon: 'film-outline' },
+      { key: 'series', label: 'TV Shows', icon: 'tv-outline' },
+    ];
 
   const onDirectionHandledWithoutMovement = useCallback(
     (movement: Direction) => {
@@ -94,8 +95,6 @@ export default function WatchlistScreen() {
 
   const filterLabel = filter === 'movie' ? 'Movies' : filter === 'series' ? 'TV Shows' : 'All Titles';
 
-
-
   return (
     <SpatialNavigationRoot isActive={isActive} onDirectionHandledWithoutMovement={onDirectionHandledWithoutMovement}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -118,10 +117,7 @@ export default function WatchlistScreen() {
                           icon={option.icon}
                           onFocus={() => setFocusedFilterIndex(index)}
                           onSelect={() => setFilter(option.key)}
-                          style={[
-                            styles.filterButton,
-                            isActive && styles.filterButtonActive,
-                          ]}
+                          style={[styles.filterButton, isActive && styles.filterButtonActive]}
                         />
                       </DefaultFocus>
                     ) : (
@@ -132,10 +128,7 @@ export default function WatchlistScreen() {
                         icon={option.icon}
                         onFocus={() => setFocusedFilterIndex(index)}
                         onSelect={() => setFilter(option.key)}
-                        style={[
-                          styles.filterButton,
-                          isActive && styles.filterButtonActive,
-                        ]}
+                        style={[styles.filterButton, isActive && styles.filterButtonActive]}
                       />
                     );
                   })}

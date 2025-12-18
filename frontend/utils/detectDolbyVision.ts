@@ -11,10 +11,7 @@ const DOLBY_VISION_PATTERNS: RegExp[] = [
 const ZERO_WIDTH_CHARACTERS = /[\u200B-\u200D\uFEFF]/g;
 
 const normalizeCandidate = (value: string): string => {
-  return value
-    .replace(ZERO_WIDTH_CHARACTERS, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return value.replace(ZERO_WIDTH_CHARACTERS, '').replace(/\s+/g, ' ').trim();
 };
 
 const testCandidate = (value: string): boolean => {
@@ -34,9 +31,7 @@ const testCandidate = (value: string): boolean => {
   });
 };
 
-export const hasDolbyVisionTag = (
-  ...candidates: Array<string | null | undefined>
-): boolean => {
+export const hasDolbyVisionTag = (...candidates: Array<string | null | undefined>): boolean => {
   return candidates.some((candidate) => {
     if (typeof candidate !== 'string') {
       return false;

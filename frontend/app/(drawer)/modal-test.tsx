@@ -6,21 +6,10 @@
 import FocusablePressable from '@/components/FocusablePressable';
 import { useMenuContext } from '@/components/MenuContext';
 import TvModal from '@/components/TvModal';
-import {
-  DefaultFocus,
-  SpatialNavigationNode,
-  SpatialNavigationRoot
-} from '@/services/tv-navigation';
+import { DefaultFocus, SpatialNavigationNode, SpatialNavigationRoot } from '@/services/tv-navigation';
 import { useTheme } from '@/theme';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View
-} from 'react-native';
+import { FlatList, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type TestModalType = 'tv-modal' | 'tv-modal-flatlist' | 'tv-modal-scrollnode' | 'tv-modal-manual-scroll' | null;
 

@@ -36,60 +36,58 @@ interface DebugCardContentProps {
   cardHeight: number;
 }
 
-const DebugCardContent: React.FC<DebugCardContentProps> = React.memo(
-  ({ item, isFocused, cardWidth, cardHeight }) => {
-    const theme = useTheme();
+const DebugCardContent: React.FC<DebugCardContentProps> = React.memo(({ item, isFocused, cardWidth, cardHeight }) => {
+  const theme = useTheme();
 
-    const styles = useMemo(
-      () =>
-        StyleSheet.create({
-          card: {
-            width: cardWidth,
-            height: cardHeight,
-            borderRadius: theme.radius.md,
-            backgroundColor: theme.colors.background.surface,
-            borderWidth: 3,
-            borderColor: theme.colors.border.subtle,
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-          },
-          cardFocused: {
-            borderColor: theme.colors.accent.primary,
-            backgroundColor: theme.colors.background.elevated,
-            transform: [{ scale: 1.02 }],
-          },
-          cardIndex: {
-            ...theme.typography.title.xl,
-            color: theme.colors.text.primary,
-            fontSize: 48,
-            fontWeight: '700',
-          },
-          cardLabel: {
-            ...theme.typography.body.lg,
-            color: theme.colors.text.secondary,
-          },
-          cardTextFocused: {
-            color: theme.colors.accent.primary,
-          },
-          cardHint: {
-            ...theme.typography.caption.sm,
-            color: theme.colors.text.muted,
-            marginTop: theme.spacing.xs,
-          },
-        }),
-      [theme, cardWidth, cardHeight],
-    );
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        card: {
+          width: cardWidth,
+          height: cardHeight,
+          borderRadius: theme.radius.md,
+          backgroundColor: theme.colors.background.surface,
+          borderWidth: 3,
+          borderColor: theme.colors.border.subtle,
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+        },
+        cardFocused: {
+          borderColor: theme.colors.accent.primary,
+          backgroundColor: theme.colors.background.elevated,
+          transform: [{ scale: 1.02 }],
+        },
+        cardIndex: {
+          ...theme.typography.title.xl,
+          color: theme.colors.text.primary,
+          fontSize: 48,
+          fontWeight: '700',
+        },
+        cardLabel: {
+          ...theme.typography.body.lg,
+          color: theme.colors.text.secondary,
+        },
+        cardTextFocused: {
+          color: theme.colors.accent.primary,
+        },
+        cardHint: {
+          ...theme.typography.caption.sm,
+          color: theme.colors.text.muted,
+          marginTop: theme.spacing.xs,
+        },
+      }),
+    [theme, cardWidth, cardHeight],
+  );
 
-    return (
-      <View style={[styles.card, isFocused && styles.cardFocused]}>
-        <Text style={[styles.cardIndex, isFocused && styles.cardTextFocused]}>{item.index + 1}</Text>
-        <Text style={[styles.cardLabel, isFocused && styles.cardTextFocused]}>{item.label}</Text>
-        {isFocused && <Text style={styles.cardHint}>Press to select</Text>}
-      </View>
-    );
-  },
-);
+  return (
+    <View style={[styles.card, isFocused && styles.cardFocused]}>
+      <Text style={[styles.cardIndex, isFocused && styles.cardTextFocused]}>{item.index + 1}</Text>
+      <Text style={[styles.cardLabel, isFocused && styles.cardTextFocused]}>{item.label}</Text>
+      {isFocused && <Text style={styles.cardHint}>Press to select</Text>}
+    </View>
+  );
+});
 
 interface GridCardProps {
   item: DebugItem;
@@ -205,7 +203,7 @@ function DebugScreen() {
 
 export default React.memo(DebugScreen);
 
-const createStyles = (theme: NovaTheme, screenWidth: number = 1920, _screenHeight: number = 1080) => {
+const createStyles = (theme: NovaTheme, _screenWidth: number = 1920, _screenHeight: number = 1080) => {
   const scaleFactor = Platform.isTV ? 1.5 : 1;
   const gap = theme.spacing.lg;
   const horizontalPadding = theme.spacing.xl * scaleFactor;

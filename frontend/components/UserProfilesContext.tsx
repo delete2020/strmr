@@ -203,7 +203,19 @@ export const UserProfilesProvider: React.FC<{ children: React.ReactNode }> = ({ 
       updateColor,
       deleteUser,
     };
-  }, [users, loading, error, activeUserId, selectUser, refresh, createUser, renameUser, updateColor, deleteUser, findUser]);
+  }, [
+    users,
+    loading,
+    error,
+    activeUserId,
+    selectUser,
+    refresh,
+    createUser,
+    renameUser,
+    updateColor,
+    deleteUser,
+    findUser,
+  ]);
 
   return <UserProfilesContext.Provider value={value}>{children}</UserProfilesContext.Provider>;
 };

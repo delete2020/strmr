@@ -93,10 +93,11 @@ const FocusablePressable = ({
 
         const content = (
           <View style={{ position: 'relative' }}>
-            <View style={[
-              showBoth ? { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm } : undefined,
-              invisibleIcon && !icon && { minHeight: scaledIconSize, justifyContent: 'center' },
-            ]}>
+            <View
+              style={[
+                showBoth ? { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm } : undefined,
+                invisibleIcon && !icon && { minHeight: scaledIconSize, justifyContent: 'center' },
+              ]}>
               {icon && !loading ? (
                 <Ionicons
                   name={icon}
@@ -155,8 +156,7 @@ const FocusablePressable = ({
             style={viewStyle}
             onPress={!Platform.isTV ? onSelect : undefined}
             // Disable native tvOS parallax/motion effects - visual focus is managed by SpatialNavigationFocusableView
-            tvParallaxProperties={{ enabled: false }}
-          >
+            tvParallaxProperties={{ enabled: false }}>
             {content}
             {showReadyPip && !loading && (
               <View
