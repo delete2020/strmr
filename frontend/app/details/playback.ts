@@ -699,9 +699,8 @@ export const initiatePlayback = async (
     }
   }
 
-  const sizeLabel = playback.fileSize ? formatFileSize(playback.fileSize) : 'Unknown size';
-  const hdrLabel = hasDolbyVision ? ' • Dolby Vision' : hasHDR10 ? ' • HDR10' : '';
-  setSelectionInfo(`Stream ready • ${sizeLabel} • status ${playback.healthStatus}${hdrLabel}`);
+  // Don't show "Stream ready" toast as it might overlay the player content
+  setSelectionInfo(null);
 
   console.log(
     '[initiatePlayback] playbackPreference:',

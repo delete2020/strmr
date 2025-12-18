@@ -1837,7 +1837,8 @@ export default function DetailsScreen() {
           if (apiService.isPrequeueReady(status.status)) {
             // Ready to play!
             console.log('[prequeue] Using ready prequeue:', currentPrequeueId);
-            setSelectionInfo('Stream ready');
+            // Clear toast before launching player to prevent overlay
+            setSelectionInfo(null);
             await launchFromPrequeue(status);
             return;
           }
@@ -1853,7 +1854,8 @@ export default function DetailsScreen() {
 
             if (readyStatus) {
               console.log('[prequeue] Prequeue became ready');
-              setSelectionInfo('Stream ready');
+              // Clear toast before launching player to prevent overlay
+              setSelectionInfo(null);
               await launchFromPrequeue(readyStatus);
               return;
             }
@@ -2609,57 +2611,51 @@ export default function DetailsScreen() {
       setSelectionError(null);
       setIsResolving(true);
 
-      // Show loading screen now that user has made a selection
-      await showLoadingScreenIfEnabled();
+      // Define the playback action to be wrapped in resume check
+      const playAction = async () => {
+        // Show loading screen now that user has confirmed playback
+        await showLoadingScreenIfEnabled();
 
-      try {
-        await handleInitiatePlayback(result, abortController.signal);
+        try {
+          await handleInitiatePlayback(result, abortController.signal);
 
-        // Check if aborted after playback
-        if (abortController.signal.aborted) {
-          console.log('🚫 Manual playback was cancelled');
-          return;
-        }
+          // Check if aborted after playback
+          if (abortController.signal.aborted) {
+            console.log('🚫 Manual playback was cancelled');
+            return;
+          }
 
-        // Don't automatically record episode playback - let progress tracking handle it
-        // if (activeEpisode) {
-        //   recordEpisodePlayback(activeEpisode);
-        // }
+          // Clear the abort controller since playback was successful
+          if (abortControllerRef.current === abortController) {
+            abortControllerRef.current = null;
+          }
+        } catch (err) {
+          // Don't show error if the operation was aborted
+          const isAbortError = err instanceof Error && (err.name === 'AbortError' || err.message?.includes('aborted'));
+          if (isAbortError) {
+            console.log('🚫 Manual playback was aborted');
+            setSelectionInfo(null);
+            setSelectionError(null);
+            return;
+          }
 
-        // Clear the abort controller since playback was successful
-        if (abortControllerRef.current === abortController) {
-          abortControllerRef.current = null;
-        }
-      } catch (err) {
-        // Don't show error if the operation was aborted
-        const isAbortError = err instanceof Error && (err.name === 'AbortError' || err.message?.includes('aborted'));
-        if (isAbortError) {
-          console.log('🚫 Manual playback was aborted');
+          // Handle playback errors
+          console.error('⚠️ Manual playback failed:', err);
+          const message = err instanceof Error ? err.message : 'Playback failed';
+          setSelectionError(message);
           setSelectionInfo(null);
-          setSelectionError(null);
-          return;
-        }
-
-        const message = err instanceof Error ? err.message : 'Failed to start playback for the selected release.';
-        console.error('⚠️ Manual playback failed:', err);
-        // setSelectionError will trigger a toast via the useEffect hook
-        setSelectionError(message);
-        setSelectionInfo(null);
-        // Clear loading screen and black overlay on error
-        hideLoadingScreen();
-        setShowBlackOverlay(false);
-      } finally {
-        // Only clear isResolving if this controller is still the active one
-        if (abortControllerRef.current === abortController || !abortController.signal.aborted) {
+          // Clear loading screen and black overlay on error
+          hideLoadingScreen();
+          setShowBlackOverlay(false);
+        } finally {
           setIsResolving(false);
         }
-        // Clean up the abort controller reference
-        if (abortControllerRef.current === abortController) {
-          abortControllerRef.current = null;
-        }
-      }
+      };
+
+      // Check for resume progress before initiating playback
+      await checkAndShowResumeModal(playAction);
     },
-    [activeEpisode, handleInitiatePlayback, hideLoadingScreen, recordEpisodePlayback, showLoadingScreenIfEnabled],
+    [checkAndShowResumeModal, handleInitiatePlayback, hideLoadingScreen, showLoadingScreenIfEnabled],
   );
 
   const handleToggleWatchlist = useCallback(async () => {
