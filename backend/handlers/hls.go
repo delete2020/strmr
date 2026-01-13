@@ -283,25 +283,25 @@ func (t *throttledReader) Read(p []byte) (n int, err error) {
 
 // HLSSession represents an active HLS transcoding session
 type HLSSession struct {
-	ID           string
-	Path         string
-	OriginalPath string
-	OutputDir    string
-	CreatedAt    time.Time
-	LastAccess   time.Time
-	FFmpegCmd    *exec.Cmd
-	Cancel       context.CancelFunc
-	mu           sync.RWMutex
-	Completed    bool
-	HasDV        bool
-	DVProfile    string
-	DVDisabled          bool // Set to true if DV metadata parsing fails and we fallback to non-DV
-	HasHDR              bool // HDR10 content (needs fMP4 segments for iOS compatibility)
-	HDRMetadataDisabled bool // Set to true if hevc_metadata filter fails (malformed SEI data)
-	Duration          float64 // Total duration in seconds from ffprobe
-	StartOffset        float64 // Requested start offset in seconds for session warm starts (never changes, for frontend)
-	TranscodingOffset  float64 // Current transcoding position (updated on recovery restarts)
-	ActualStartOffset  float64 // Actual start time from fMP4 tfdt box (keyframe-aligned, for subtitle sync)
+	ID                  string
+	Path                string
+	OriginalPath        string
+	OutputDir           string
+	CreatedAt           time.Time
+	LastAccess          time.Time
+	FFmpegCmd           *exec.Cmd
+	Cancel              context.CancelFunc
+	mu                  sync.RWMutex
+	Completed           bool
+	HasDV               bool
+	DVProfile           string
+	DVDisabled          bool    // Set to true if DV metadata parsing fails and we fallback to non-DV
+	HasHDR              bool    // HDR10 content (needs fMP4 segments for iOS compatibility)
+	HDRMetadataDisabled bool    // Set to true if hevc_metadata filter fails (malformed SEI data)
+	Duration            float64 // Total duration in seconds from ffprobe
+	StartOffset         float64 // Requested start offset in seconds for session warm starts (never changes, for frontend)
+	TranscodingOffset   float64 // Current transcoding position (updated on recovery restarts)
+	ActualStartOffset   float64 // Actual start time from fMP4 tfdt box (keyframe-aligned, for subtitle sync)
 
 	// Profile tracking
 	ProfileID   string
@@ -324,13 +324,13 @@ type HLSSession struct {
 	IdleTimeoutTriggered bool
 
 	// Segment tracking for cleanup and rate limiting
-	MinSegmentRequested      int // Minimum segment number that has been requested (-1 = none yet)
-	MaxSegmentRequested      int // Maximum segment number that has been requested (-1 = none yet)
-	MinSegmentAvailable      int // Minimum segment number still available on disk (for playlist filtering)
-	LastPlaybackSegment      int // Player's actual playback position from keepalive time reports (-1 = unknown)
-	LastSegmentServed        int // Last segment number successfully served to client (-1 = none yet)
-	EarliestBufferedSegment  int // Earliest segment still in player's buffer from keepalive (-1 = unknown)
-	Paused                   bool // True if FFmpeg is paused (SIGSTOP) waiting for player to catch up
+	MinSegmentRequested     int  // Minimum segment number that has been requested (-1 = none yet)
+	MaxSegmentRequested     int  // Maximum segment number that has been requested (-1 = none yet)
+	MinSegmentAvailable     int  // Minimum segment number still available on disk (for playlist filtering)
+	LastPlaybackSegment     int  // Player's actual playback position from keepalive time reports (-1 = unknown)
+	LastSegmentServed       int  // Last segment number successfully served to client (-1 = none yet)
+	EarliestBufferedSegment int  // Earliest segment still in player's buffer from keepalive (-1 = unknown)
+	Paused                  bool // True if FFmpeg is paused (SIGSTOP) waiting for player to catch up
 
 	// Multi-signal timeout detection (prevents false positives during decoder transitions)
 	ConsecutiveTimeoutChecks int       // Number of consecutive timeout checks that exceeded threshold
@@ -343,16 +343,16 @@ type HLSSession struct {
 	SeekInProgress     bool // Set to true during user-initiated seek to prevent recovery logic
 
 	// Fatal error tracking (unplayable streams)
-	FatalError       string // Set when stream is determined to be unplayable (persistent bitstream errors)
+	FatalError string // Set when stream is determined to be unplayable (persistent bitstream errors)
 
 	// Cached probe data from unified probe (avoids multiple ffprobe calls)
 	ProbeData *UnifiedProbeResult
 
 	// Per-track extraction tracking (prevents duplicate extractions without blocking session)
-	subtitleExtractionMu     sync.Mutex      // Protects subtitleExtracting map
-	subtitleExtracting       map[int]bool    // Tracks which subtitle tracks are currently being extracted
-	FatalErrorTime   time.Time
-	BitstreamErrors  int // Count of bitstream filter errors (to detect persistent issues)
+	subtitleExtractionMu sync.Mutex   // Protects subtitleExtracting map
+	subtitleExtracting   map[int]bool // Tracks which subtitle tracks are currently being extracted
+	FatalErrorTime       time.Time
+	BitstreamErrors      int // Count of bitstream filter errors (to detect persistent issues)
 
 	// Live TV session fields
 	IsLive bool // True for live TV streams (no duration, no seeking)
@@ -415,11 +415,11 @@ const (
 
 // FFmpegErrorType classifies FFmpeg errors for better debugging
 type FFmpegErrorType struct {
-	Category    string   // "bitstream", "decoder", "network", "disk", "timeout", "unknown"
-	Severity    string   // "warning", "error", "fatal"
-	Message     string   // Human-readable description
-	Recoverable bool     // Can we retry?
-	RawError    string   // Original FFmpeg stderr snippet
+	Category    string // "bitstream", "decoder", "network", "disk", "timeout", "unknown"
+	Severity    string // "warning", "error", "fatal"
+	Message     string // Human-readable description
+	Recoverable bool   // Can we retry?
+	RawError    string // Original FFmpeg stderr snippet
 }
 
 // truncateString truncates a string to maxLen characters, adding "..." if truncated
@@ -481,12 +481,12 @@ func NewHLSManager(baseDir, ffmpegPath, ffprobePath string, streamer streaming.P
 // classifyFFmpegError analyzes FFmpeg stderr to categorize the error
 func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 	lower := strings.ToLower(stderr)
-	
+
 	// Bitstream errors (corrupted video data)
 	if strings.Contains(lower, "invalid nal unit size") ||
-	   strings.Contains(lower, "error while decoding") ||
-	   strings.Contains(lower, "corrupt decoded frame") ||
-	   strings.Contains(lower, "concealing") {
+		strings.Contains(lower, "error while decoding") ||
+		strings.Contains(lower, "corrupt decoded frame") ||
+		strings.Contains(lower, "concealing") {
 		return FFmpegErrorType{
 			Category:    "bitstream",
 			Severity:    "error",
@@ -495,12 +495,12 @@ func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 			RawError:    truncateString(stderr, 200),
 		}
 	}
-	
+
 	// Decoder errors (codec not supported, HDR issues)
 	if strings.Contains(lower, "decoder initialization failed") ||
-	   strings.Contains(lower, "no decoder available") ||
-	   strings.Contains(lower, "unknown codec") ||
-	   strings.Contains(lower, "codec not currently supported") {
+		strings.Contains(lower, "no decoder available") ||
+		strings.Contains(lower, "unknown codec") ||
+		strings.Contains(lower, "codec not currently supported") {
 		return FFmpegErrorType{
 			Category:    "decoder",
 			Severity:    "fatal",
@@ -509,12 +509,12 @@ func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 			RawError:    truncateString(stderr, 200),
 		}
 	}
-	
+
 	// Network errors (source unreachable)
 	if strings.Contains(lower, "i/o error") ||
-	   strings.Contains(lower, "connection refused") ||
-	   strings.Contains(lower, "connection timed out") ||
-	   strings.Contains(lower, "no route to host") {
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "connection timed out") ||
+		strings.Contains(lower, "no route to host") {
 		return FFmpegErrorType{
 			Category:    "network",
 			Severity:    "warning",
@@ -523,11 +523,11 @@ func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 			RawError:    truncateString(stderr, 200),
 		}
 	}
-	
+
 	// Disk errors (no space, permissions)
 	if strings.Contains(lower, "no space left") ||
-	   strings.Contains(lower, "permission denied") ||
-	   strings.Contains(lower, "read-only file system") {
+		strings.Contains(lower, "permission denied") ||
+		strings.Contains(lower, "read-only file system") {
 		return FFmpegErrorType{
 			Category:    "disk",
 			Severity:    "fatal",
@@ -536,10 +536,10 @@ func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 			RawError:    truncateString(stderr, 200),
 		}
 	}
-	
+
 	// Timeout/hanging
 	if strings.Contains(lower, "timed out") ||
-	   strings.Contains(lower, "timeout") {
+		strings.Contains(lower, "timeout") {
 		return FFmpegErrorType{
 			Category:    "timeout",
 			Severity:    "error",
@@ -548,7 +548,7 @@ func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 			RawError:    truncateString(stderr, 200),
 		}
 	}
-	
+
 	// Unknown error
 	return FFmpegErrorType{
 		Category:    "unknown",
@@ -562,7 +562,7 @@ func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
 // detectPlatform extracts platform from User-Agent header
 func (m *HLSManager) detectPlatform(userAgent string) string {
 	ua := strings.ToLower(userAgent)
-	
+
 	if strings.Contains(ua, "android") {
 		return "Android"
 	}
@@ -587,18 +587,18 @@ func (m *HLSManager) getPlatformTimeouts(platform string, hasHDR bool) (idleTime
 			return 90 * time.Second, 45 * time.Second
 		}
 		return 45 * time.Second, 30 * time.Second
-		
+
 	case "iOS", "tvOS":
 		// iOS/tvOS hardware decoders are faster and more reliable
 		if hasHDR {
 			return 60 * time.Second, 30 * time.Second
 		}
 		return 30 * time.Second, 20 * time.Second
-		
+
 	case "Web":
 		// Web browsers buffer aggressively
 		return 60 * time.Second, 30 * time.Second
-		
+
 	default:
 		// Conservative defaults for unknown platforms
 		if hasHDR {
@@ -611,10 +611,10 @@ func (m *HLSManager) getPlatformTimeouts(platform string, hasHDR bool) (idleTime
 // recordSegmentRequest tracks segment request timing for pattern analysis
 func (m *HLSManager) recordSegmentRequest(session *HLSSession, segmentNum int) {
 	now := time.Now()
-	
+
 	session.SegmentRequestTimesmu.Lock()
 	defer session.SegmentRequestTimesmu.Unlock()
-	
+
 	// Keep only last 20 requests
 	session.SegmentRequestTimes = append(session.SegmentRequestTimes, now)
 	if len(session.SegmentRequestTimes) > 20 {
@@ -666,27 +666,27 @@ func (m *HLSManager) analyzeSegmentPattern(session *HLSSession) map[string]inter
 	times := make([]time.Time, len(session.SegmentRequestTimes))
 	copy(times, session.SegmentRequestTimes)
 	session.SegmentRequestTimesmu.Unlock()
-	
+
 	if len(times) < 2 {
 		return nil
 	}
-	
+
 	// Calculate intervals between requests
 	var intervals []float64
 	for i := 1; i < len(times); i++ {
 		intervalMs := times[i].Sub(times[i-1]).Milliseconds()
 		intervals = append(intervals, float64(intervalMs))
 	}
-	
+
 	// Calculate statistics
 	avgInterval := average(intervals)
 	minInterval := min(intervals)
 	maxInterval := max(intervals)
-	
+
 	// Detect patterns
-	burstCount := 0  // Requests < 1s apart (prefetching)
+	burstCount := 0 // Requests < 1s apart (prefetching)
 	pauseDetected := false
-	
+
 	for _, interval := range intervals {
 		if interval < 1000 {
 			burstCount++
@@ -695,48 +695,48 @@ func (m *HLSManager) analyzeSegmentPattern(session *HLSSession) map[string]inter
 			pauseDetected = true
 		}
 	}
-	
+
 	return map[string]interface{}{
-		"avgIntervalMs":  avgInterval,
-		"minIntervalMs":  minInterval,
-		"maxIntervalMs":  maxInterval,
-		"burstCount":     burstCount,
-		"pauseDetected":  pauseDetected,
-		"sampleSize":     len(intervals),
+		"avgIntervalMs": avgInterval,
+		"minIntervalMs": minInterval,
+		"maxIntervalMs": maxInterval,
+		"burstCount":    burstCount,
+		"pauseDetected": pauseDetected,
+		"sampleSize":    len(intervals),
 	}
 }
 
 // updatePlaylistRefreshStats tracks playlist refresh rate for player behavior analysis
 func (m *HLSManager) updatePlaylistRefreshStats(session *HLSSession) {
 	now := time.Now()
-	
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	
+
 	lastRequest := session.LastPlaylistRequest
 	session.LastPlaylistRequest = now
 	session.PlaylistRefreshCount++
-	
+
 	if !lastRequest.IsZero() {
 		interval := now.Sub(lastRequest)
-		
+
 		// Calculate exponential moving average
 		if session.PlaylistRefreshInterval == 0 {
 			session.PlaylistRefreshInterval = interval
 		} else {
-			alpha := 0.3  // Weight for new value
+			alpha := 0.3 // Weight for new value
 			session.PlaylistRefreshInterval = time.Duration(
-				float64(session.PlaylistRefreshInterval)*(1-alpha) + 
-				float64(interval)*alpha,
+				float64(session.PlaylistRefreshInterval)*(1-alpha) +
+					float64(interval)*alpha,
 			)
 		}
-		
+
 		// Log unusual refresh rates
 		if interval > 30*time.Second && session.PlaylistRefreshCount > 3 {
 			log.Printf("[hls] session %s: ⚠️ SLOW playlist refresh - %.1fs interval (platform: %s)",
 				session.ID, interval.Seconds(), session.Platform)
 		}
-		
+
 		// Log stats periodically
 		if time.Since(session.LastPlaylistRefreshLog) > 60*time.Second {
 			log.Printf("[hls] session %s: playlist refresh stats - avg_interval=%.1fs count=%d",
@@ -999,7 +999,7 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 	} else {
 		platform = "Unknown"
 	}
-	
+
 	// Get platform-specific timeouts
 	idleTimeout, startupTimeout := m.getPlatformTimeouts(platform, hasHDR || hasDV)
 
@@ -1068,37 +1068,37 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 	}
 
 	session := &HLSSession{
-		ID:                     sessionID,
-		Path:                   path,
-		OriginalPath:           originalPath,
-		OutputDir:              outputDir,
-		CreatedAt:              now,
-		LastAccess:             now,
-		Cancel:                 cancel,
-		HasDV:                  hasDV,
-		DVProfile:              dvProfile,
-		HasHDR:                 hasHDR,
-		Duration:               duration,
-		StartOffset:            startOffset,
-		TranscodingOffset:      actualTranscodingOffset, // May differ from StartOffset if keyframe-aligned
-		ActualStartOffset:      actualTranscodingOffset, // For subtitle sync
-		ProfileID:              profileID,
-		ProfileName:            profileName,
-		ClientIP:               clientIP,
-		AudioTrackIndex:        audioTrackIndex,
-		SubtitleTrackIndex:     subtitleTrackIndex,
-		StreamStartTime:        now,
-		LastSegmentRequest:     now, // Initialize to now to avoid immediate timeout
-		LastKeepaliveTime:      now, // Initialize to now to avoid immediate timeout
-		MinSegmentRequested:    -1,  // Initialize to -1 (no segments requested yet)
-		MaxSegmentRequested:    -1,  // Initialize to -1 (no segments requested yet)
-		LastPlaybackSegment:    -1,  // Initialize to -1 (no keepalive time reported yet)
-		LastSegmentServed:      -1,  // Initialize to -1 (no segments served yet)
-		EarliestBufferedSegment: -1, // Initialize to -1 (no buffer info reported yet)
-		ProbeData:              probeData, // Cache unified probe results for startTranscoding
-		Platform:               platform,
-		IdleTimeoutOverride:    idleTimeout,
-		StartupTimeoutOverride: startupTimeout,
+		ID:                      sessionID,
+		Path:                    path,
+		OriginalPath:            originalPath,
+		OutputDir:               outputDir,
+		CreatedAt:               now,
+		LastAccess:              now,
+		Cancel:                  cancel,
+		HasDV:                   hasDV,
+		DVProfile:               dvProfile,
+		HasHDR:                  hasHDR,
+		Duration:                duration,
+		StartOffset:             startOffset,
+		TranscodingOffset:       actualTranscodingOffset, // May differ from StartOffset if keyframe-aligned
+		ActualStartOffset:       actualTranscodingOffset, // For subtitle sync
+		ProfileID:               profileID,
+		ProfileName:             profileName,
+		ClientIP:                clientIP,
+		AudioTrackIndex:         audioTrackIndex,
+		SubtitleTrackIndex:      subtitleTrackIndex,
+		StreamStartTime:         now,
+		LastSegmentRequest:      now,       // Initialize to now to avoid immediate timeout
+		LastKeepaliveTime:       now,       // Initialize to now to avoid immediate timeout
+		MinSegmentRequested:     -1,        // Initialize to -1 (no segments requested yet)
+		MaxSegmentRequested:     -1,        // Initialize to -1 (no segments requested yet)
+		LastPlaybackSegment:     -1,        // Initialize to -1 (no keepalive time reported yet)
+		LastSegmentServed:       -1,        // Initialize to -1 (no segments served yet)
+		EarliestBufferedSegment: -1,        // Initialize to -1 (no buffer info reported yet)
+		ProbeData:               probeData, // Cache unified probe results for startTranscoding
+		Platform:                platform,
+		IdleTimeoutOverride:     idleTimeout,
+		StartupTimeoutOverride:  startupTimeout,
 	}
 
 	m.mu.Lock()
@@ -1522,7 +1522,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 	var usingPipe bool
 	var headerPrefix []byte
 	var requireMatroskaAlign bool
-	var proxyURL string       // URL for FFmpeg to use (via throttling proxy)
+	var proxyURL string        // URL for FFmpeg to use (via throttling proxy)
 	var proxy *throttlingProxy // proxy server to close when done
 
 	// For direct URLs, use a throttling proxy so FFmpeg can use HTTP Range requests for seeking
@@ -2706,7 +2706,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 		session.InputErrorDetected = false // Reset so we can detect new errors
 		session.RecoveryAttempts++
 		session.TranscodingOffset = newTranscodingOffset // Update transcoding offset to resume position
-		session.CreatedAt = time.Now()       // Reset so startup timeout doesn't immediately fire
+		session.CreatedAt = time.Now()                   // Reset so startup timeout doesn't immediately fire
 		session.LastSegmentRequest = time.Now()
 		// Keep SegmentsCreated, BytesStreamed, SegmentRequestCount as-is for tracking
 		session.mu.Unlock()
@@ -3084,7 +3084,7 @@ func (m *HLSManager) Seek(w http.ResponseWriter, r *http.Request, sessionID stri
 	session.FFmpegCmd = nil
 	session.FFmpegPID = 0
 	session.Completed = false
-	session.StartOffset = targetTime      // User's new position (for frontend display)
+	session.StartOffset = targetTime        // User's new position (for frontend display)
 	session.TranscodingOffset = keyframePos // FFmpeg starts from keyframe position
 	session.ActualStartOffset = keyframePos // For subtitle sync
 	session.CreatedAt = time.Now()
@@ -3096,7 +3096,7 @@ func (m *HLSManager) Seek(w http.ResponseWriter, r *http.Request, sessionID stri
 	session.MaxSegmentRequested = -1
 	session.LastPlaybackSegment = 0
 	session.EarliestBufferedSegment = 0
-	session.RecoveryAttempts = 0 // Reset recovery attempts for new seek position
+	session.RecoveryAttempts = 0   // Reset recovery attempts for new seek position
 	session.SeekInProgress = false // Clear seek flag now that we're starting fresh
 	cachedForceAAC := session.forceAAC
 	session.mu.Unlock()
@@ -3453,7 +3453,7 @@ func (m *HLSManager) ServeSegment(w http.ResponseWriter, r *http.Request, sessio
 	if _, err := fmt.Sscanf(segmentName, "segment%d.", &segmentNum); err == nil {
 		// Track segment request timing for pattern analysis
 		m.recordSegmentRequest(session, segmentNum)
-		
+
 		// Update tracking for this segment request
 		session.mu.Lock()
 		if session.MinSegmentRequested < 0 || segmentNum < session.MinSegmentRequested {

@@ -188,7 +188,7 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
 
   // Keepalive health tracking
   const keepaliveHealthRef = useRef<KeepaliveHealth>({
-    lastSuccessTime: Date.now(),
+    lastSuccessTime: 0,  // No keepalive succeeded yet
     lastFailureTime: 0,
     consecutiveFailures: 0,
     totalSent: 0,

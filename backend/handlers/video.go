@@ -74,9 +74,9 @@ type VideoHandler struct {
 	subtitleExtractManager *SubtitleExtractManager
 
 	// Local WebDAV access for ffprobe seeking (usenet paths)
-	webdavMu       sync.RWMutex
-	webdavBaseURL  string
-	webdavPrefix   string
+	webdavMu      sync.RWMutex
+	webdavBaseURL string
+	webdavPrefix  string
 
 	// User settings for policy checks (e.g., HDR/DV policy)
 	userSettingsSvc   UserSettingsProvider

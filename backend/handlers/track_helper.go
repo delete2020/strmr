@@ -101,7 +101,7 @@ func IsAudioDescriptionTrack(title string) bool {
 		"-ad-",
 		"_ad_",
 	}
-	
+
 	for _, pattern := range adPatterns {
 		if strings.Contains(lowerTitle, pattern) {
 			return true
