@@ -1130,11 +1130,23 @@ func (m *HLSManager) startLiveTranscoding(ctx context.Context, session *HLSSessi
 				session.mu.RUnlock()
 
 				idleTime := time.Since(lastRequest)
+				
+				// Get platform-specific timeouts
+				session.mu.RLock()
+				startupThreshold := session.StartupTimeoutOverride
+				idleThreshold := session.IdleTimeoutOverride
+				session.mu.RUnlock()
+				if startupThreshold == 0 {
+					startupThreshold = hlsStartupTimeout
+				}
+				if idleThreshold == 0 {
+					idleThreshold = hlsIdleTimeout
+				}
 
-				// Startup timeout: if no segment requests after 30s, kill FFmpeg
-				if segmentCount == 0 && idleTime > hlsStartupTimeout {
-					log.Printf("[hls] live session %s: STARTUP_TIMEOUT - no segment requests after %v",
-						session.ID, idleTime)
+				// Startup timeout: if no segment requests after platform-specific timeout, kill FFmpeg
+				if segmentCount == 0 && idleTime > startupThreshold {
+					log.Printf("[hls] live session %s: STARTUP_TIMEOUT - no segment requests after %v (threshold=%v)",
+						session.ID, idleTime, startupThreshold)
 					session.mu.Lock()
 					session.IdleTimeoutTriggered = true
 					session.mu.Unlock()
@@ -1144,10 +1156,10 @@ func (m *HLSManager) startLiveTranscoding(ctx context.Context, session *HLSSessi
 					return
 				}
 
-				// Idle timeout: if no segment requests for 30s after playback started
-				if segmentCount > 0 && idleTime > hlsIdleTimeout {
-					log.Printf("[hls] live session %s: IDLE_TIMEOUT - no requests for %v (%d segments served)",
-						session.ID, idleTime, segmentCount)
+				// Idle timeout: if no segment requests for platform-specific timeout after playback started
+				if segmentCount > 0 && idleTime > idleThreshold {
+					log.Printf("[hls] live session %s: IDLE_TIMEOUT - no requests for %v (%d segments served, threshold=%v)",
+						session.ID, idleTime, segmentCount, idleThreshold)
 					session.mu.Lock()
 					session.IdleTimeoutTriggered = true
 					session.mu.Unlock()
@@ -2338,11 +2350,19 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 				}
 
 				sessionAge := time.Since(session.CreatedAt)
+				
+				// Get platform-specific startup timeout
+				session.mu.RLock()
+				startupThreshold := session.StartupTimeoutOverride
+				session.mu.RUnlock()
+				if startupThreshold == 0 {
+					startupThreshold = hlsStartupTimeout // fallback
+				}
 
-				// Check for startup timeout: no segments requested within hlsStartupTimeout
-				if segmentCount == 0 && sessionAge > hlsStartupTimeout {
-					log.Printf("[hls] session %s: STARTUP_TIMEOUT triggered after %v (no segments requested)",
-						session.ID, sessionAge)
+				// Check for startup timeout: no segments requested within platform-specific timeout
+				if segmentCount == 0 && sessionAge > startupThreshold {
+					log.Printf("[hls] session %s: STARTUP_TIMEOUT triggered after %v (no segments requested, threshold=%v)",
+						session.ID, sessionAge, startupThreshold)
 
 					session.mu.Lock()
 					session.IdleTimeoutTriggered = true
