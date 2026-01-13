@@ -360,6 +360,19 @@ type HLSSession struct {
 
 	// Live TV session fields
 	IsLive bool // True for live TV streams (no duration, no seeking)
+	
+	// Platform-specific timeout tuning
+	Platform               string
+	IdleTimeoutOverride    time.Duration
+	StartupTimeoutOverride time.Duration
+	
+	// Segment pattern analysis
+	SegmentRequestTimes   []time.Time
+	SegmentRequestTimesmu sync.Mutex
+	
+	// Playlist refresh monitoring
+	PlaylistRefreshInterval time.Duration
+	PlaylistRefreshCount    int
 }
 
 const (
@@ -490,6 +503,132 @@ func (m *HLSManager) ConfigureLocalWebDAVAccess(baseURL, prefix, username, passw
 	m.localAccessMu.Unlock()
 
 	log.Printf("[hls] configured local WebDAV direct access: base=%q prefix=%q", normalizedBase, normalizedPrefix)
+}
+
+// detectPlatform extracts platform from User-Agent
+func (m *HLSManager) detectPlatform(userAgent string) string {
+	ua := strings.ToLower(userAgent)
+	
+	if strings.Contains(ua, "android") {
+		return "Android"
+	}
+	if strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") {
+		return "iOS"
+	}
+	if strings.Contains(ua, "appletv") || strings.Contains(ua, "tvos") {
+		return "tvOS"
+	}
+	if strings.Contains(ua, "chrome") || strings.Contains(ua, "firefox") || strings.Contains(ua, "safari") {
+		return "Web"
+	}
+	return "Unknown"
+}
+
+// getPlatformTimeouts returns optimized timeout values
+func (m *HLSManager) getPlatformTimeouts(platform string, hasHDR bool) (idleTimeout, startupTimeout time.Duration) {
+	switch platform {
+	case "Android":
+		if hasHDR {
+			return 90 * time.Second, 45 * time.Second
+		}
+		return 45 * time.Second, 30 * time.Second
+		
+	case "iOS", "tvOS":
+		if hasHDR {
+			return 60 * time.Second, 30 * time.Second
+		}
+		return 30 * time.Second, 20 * time.Second
+		
+	case "Web":
+		return 60 * time.Second, 30 * time.Second
+		
+	default:
+		if hasHDR {
+			return 75 * time.Second, 40 * time.Second
+		}
+		return 45 * time.Second, 30 * time.Second
+	}
+}
+
+// FFmpegErrorType classifies FFmpeg errors by category and severity
+type FFmpegErrorType struct {
+	Category    string
+	Severity    string
+	Message     string
+	Recoverable bool
+	RawError    string
+}
+
+// classifyFFmpegError categorizes FFmpeg errors for better diagnostics
+func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
+	lower := strings.ToLower(stderr)
+	
+	// Bitstream errors
+	if strings.Contains(lower, "invalid nal unit size") ||
+	   strings.Contains(lower, "error while decoding") ||
+	   strings.Contains(lower, "corrupt decoded frame") {
+		return FFmpegErrorType{
+			Category:    "bitstream",
+			Severity:    "error",
+			Message:     "Corrupted video data",
+			Recoverable: false,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Decoder errors
+	if strings.Contains(lower, "decoder initialization failed") ||
+	   strings.Contains(lower, "no decoder available") ||
+	   strings.Contains(lower, "unknown codec") {
+		return FFmpegErrorType{
+			Category:    "decoder",
+			Severity:    "fatal",
+			Message:     "Codec not supported",
+			Recoverable: false,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Network errors
+	if strings.Contains(lower, "i/o error") ||
+	   strings.Contains(lower, "connection refused") ||
+	   strings.Contains(lower, "connection timed out") {
+		return FFmpegErrorType{
+			Category:    "network",
+			Severity:    "warning",
+			Message:     "Network error accessing source",
+			Recoverable: true,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Disk errors
+	if strings.Contains(lower, "no space left") ||
+	   strings.Contains(lower, "permission denied") {
+		return FFmpegErrorType{
+			Category:    "disk",
+			Severity:    "fatal",
+			Message:     "Disk full or permissions issue",
+			Recoverable: false,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	return FFmpegErrorType{
+		Category:    "unknown",
+		Severity:    "error",
+		Message:     "Unclassified FFmpeg error",
+		Recoverable: false,
+		RawError:    truncateString(stderr, 200),
+	}
+}
+
+// truncateString limits string length for logging
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // generateSessionID creates a random session ID
@@ -686,12 +825,34 @@ func (m *HLSManager) buildLocalWebDAVURLFromPath(path string) (string, bool) {
 }
 
 // CreateSession starts a new HLS transcoding session
-func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPath string, hasDV bool, dvProfile string, hasHDR bool, forceAAC bool, startOffset float64, transcodingOffset float64, audioTrackIndex int, subtitleTrackIndex int, profileID string, profileName string, clientIP string) (*HLSSession, error) {
+func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPath string, hasDV bool, dvProfile string, hasHDR bool, forceAAC bool, startOffset float64, transcodingOffset float64, audioTrackIndex int, subtitleTrackIndex int, profileID string, profileName string, clientIP string, r *http.Request) (*HLSSession, error) {
 	sessionID := generateSessionID()
 	outputDir := filepath.Join(m.baseDir, sessionID)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
+	}
+	
+	// Platform detection for timeout tuning
+	var userAgent string
+	var platform string
+	var idleTimeout, startupTimeout time.Duration
+	if r != nil {
+		userAgent = r.Header.Get("User-Agent")
+		platform = m.detectPlatform(userAgent)
+		idleTimeout, startupTimeout = m.getPlatformTimeouts(platform, hasHDR || hasDV)
+		log.Printf("[hls] created session %s platform=%s idle_timeout=%s startup_timeout=%s", 
+			sessionID, platform, idleTimeout, startupTimeout)
+	} else {
+		// Fallback if no request provided
+		platform = "Unknown"
+		if hasHDR || hasDV {
+			idleTimeout = hlsHDRIdleTimeout
+			startupTimeout = hlsStartupTimeout
+		} else {
+			idleTimeout = hlsIdleTimeout
+			startupTimeout = hlsStartupTimeout
+		}
 	}
 
 	// Use background context so transcoding continues after HTTP response
@@ -790,6 +951,9 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 		EarliestBufferedSegment: -1,  // Initialize to -1 (no buffer info reported yet)
 		ActiveConnections:       0,   // Initialize to 0 (no active downloads)
 		ProbeData:               probeData, // Cache unified probe results for startTranscoding
+		Platform:                platform,
+		IdleTimeoutOverride:     idleTimeout,
+		StartupTimeoutOverride:  startupTimeout,
 	}
 
 	m.mu.Lock()
@@ -3071,6 +3235,9 @@ func (m *HLSManager) ServePlaylist(w http.ResponseWriter, r *http.Request, sessi
 	session.LastPlaylistRequest = time.Now() // Track playlist refresh requests
 	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter on playlist request
 	session.mu.Unlock()
+	
+	// Update playlist refresh statistics
+	m.updatePlaylistRefreshStats(session)
 
 	playlistPath := filepath.Join(session.OutputDir, "stream.m3u8")
 
@@ -3235,6 +3402,110 @@ func (m *HLSManager) ServePlaylist(w http.ResponseWriter, r *http.Request, sessi
 	log.Printf("[hls] served playlist for session %s, VIDEO-RANGE=%s, auth token=%v", sessionID, videoRange, authToken != "")
 }
 
+// recordSegmentRequest tracks segment request times for pattern analysis
+func (m *HLSManager) recordSegmentRequest(session *HLSSession) {
+	session.SegmentRequestTimesmu.Lock()
+	defer session.SegmentRequestTimesmu.Unlock()
+	
+	session.SegmentRequestTimes = append(session.SegmentRequestTimes, time.Now())
+	if len(session.SegmentRequestTimes) > 20 {
+		session.SegmentRequestTimes = session.SegmentRequestTimes[1:]
+	}
+}
+
+// analyzeSegmentPattern analyzes request patterns for diagnostics
+func (m *HLSManager) analyzeSegmentPattern(session *HLSSession) map[string]interface{} {
+	session.SegmentRequestTimesmu.Lock()
+	times := make([]time.Time, len(session.SegmentRequestTimes))
+	copy(times, session.SegmentRequestTimes)
+	session.SegmentRequestTimesmu.Unlock()
+	
+	if len(times) < 2 {
+		return nil
+	}
+	
+	var intervals []float64
+	for i := 1; i < len(times); i++ {
+		intervalMs := times[i].Sub(times[i-1]).Milliseconds()
+		intervals = append(intervals, float64(intervalMs))
+	}
+	
+	return map[string]interface{}{
+		"avgIntervalMs": average(intervals),
+		"minIntervalMs": min(intervals),
+		"maxIntervalMs": max(intervals),
+	}
+}
+
+// Helper functions for segment pattern analysis
+func average(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, v := range vals {
+		sum += v
+	}
+	return sum / float64(len(vals))
+}
+
+func min(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	m := vals[0]
+	for _, v := range vals {
+		if v < m {
+			m = v
+		}
+	}
+	return m
+}
+
+func max(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	m := vals[0]
+	for _, v := range vals {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}
+
+// updatePlaylistRefreshStats tracks playlist refresh patterns
+func (m *HLSManager) updatePlaylistRefreshStats(session *HLSSession) {
+	now := time.Now()
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	lastRequest := session.LastPlaylistRequest
+	session.LastPlaylistRequest = now
+	session.PlaylistRefreshCount++
+	
+	if !lastRequest.IsZero() {
+		interval := now.Sub(lastRequest)
+		
+		if session.PlaylistRefreshInterval == 0 {
+			session.PlaylistRefreshInterval = interval
+		} else {
+			alpha := 0.3
+			session.PlaylistRefreshInterval = time.Duration(
+				float64(session.PlaylistRefreshInterval)*(1-alpha) + 
+				float64(interval)*alpha,
+			)
+		}
+		
+		if interval > 30*time.Second {
+			log.Printf("[hls] session %s: ⚠️ SLOW playlist refresh - %.1fs",
+				session.ID, interval.Seconds())
+		}
+	}
+}
+
 // ServeSegment serves an HLS segment file
 func (m *HLSManager) ServeSegment(w http.ResponseWriter, r *http.Request, sessionID, segmentName string) {
 	requestStart := time.Now()
@@ -3274,6 +3545,9 @@ func (m *HLSManager) ServeSegment(w http.ResponseWriter, r *http.Request, sessio
 	session.ActiveConnections++          // Track active downloads
 	requestCount := session.SegmentRequestCount
 	session.mu.Unlock()
+	
+	// Record segment request for pattern analysis
+	m.recordSegmentRequest(session)
 
 	// Ensure we decrement ActiveConnections when done
 	defer func() {
