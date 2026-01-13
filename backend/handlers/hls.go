@@ -988,7 +988,7 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 
 // CreateLiveSession creates an HLS session for live TV streams
 // Unlike VOD sessions, live sessions don't have a known duration and don't support seeking
-func (m *HLSManager) CreateLiveSession(ctx context.Context, liveURL string) (*HLSSession, error) {
+func (m *HLSManager) CreateLiveSession(ctx context.Context, liveURL string, r *http.Request) (*HLSSession, error) {
 	sessionID := generateSessionID()
 	outputDir := filepath.Join(m.baseDir, sessionID)
 
@@ -997,6 +997,22 @@ func (m *HLSManager) CreateLiveSession(ctx context.Context, liveURL string) (*HL
 	}
 
 	bgCtx, cancel := context.WithCancel(context.Background())
+
+	// NEW: Platform detection for timeout tuning
+	var userAgent string
+	var platform string
+	var idleTimeout, startupTimeout time.Duration
+	if r != nil {
+		userAgent = r.Header.Get("User-Agent")
+		platform = m.detectPlatform(userAgent)
+		idleTimeout, startupTimeout = m.getPlatformTimeouts(platform, false)  // Live streams are never HDR
+		log.Printf("[hls] created live session %s platform=%s idle_timeout=%s startup_timeout=%s", 
+			sessionID, platform, idleTimeout, startupTimeout)
+	} else {
+		platform = "Unknown"
+		idleTimeout = hlsIdleTimeout
+		startupTimeout = hlsStartupTimeout
+	}
 
 	now := time.Now()
 	session := &HLSSession{
@@ -1024,6 +1040,9 @@ func (m *HLSManager) CreateLiveSession(ctx context.Context, liveURL string) (*HL
 		ActiveConnections:       0,
 		AudioTrackIndex:         -1, // Use default
 		SubtitleTrackIndex:      -1, // No subtitles for live TV
+		Platform:                platform,               // NEW
+		IdleTimeoutOverride:     idleTimeout,            // NEW
+		StartupTimeoutOverride:  startupTimeout,         // NEW
 	}
 
 	m.mu.Lock()
@@ -1617,7 +1636,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 		// This ensures consistent behavior with the frontend's expectations and avoids
 		// the Expo Video player defaulting to the first track in a multi-track manifest
 		if hasTrueHD && hasCompatibleAudio {
-			// Find the first compatible audio stream (excluding TrueHD and commentary tracks)
+			// Find the first compatible audio stream (excluding TrueHD and commentary/AD tracks)
 			log.Printf("[hls] session %s: no specific audio track selected, defaulting to first compatible stream", session.ID)
 			compatibleCodecs := map[string]bool{
 				"aac":  true,
@@ -1626,9 +1645,9 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 				"mp3":  true,
 			}
 			mappedAudio := false
-			// First pass: find compatible non-commentary track
+			// First pass: find compatible non-commentary/AD track
 			for _, stream := range audioStreams {
-				if compatibleCodecs[stream.Codec] && !isHLSCommentaryTrack(stream.Title) {
+				if compatibleCodecs[stream.Codec] && !isHLSCommentaryOrDescriptionTrack(stream.Title) {
 					audioMap := fmt.Sprintf("0:%d", stream.Index)
 					args = append(args, "-map", audioMap)
 					log.Printf("[hls] session %s: mapped first compatible audio stream %d (codec=%s)",
@@ -1637,13 +1656,13 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 					break
 				}
 			}
-			// Second pass: fallback to any compatible track (including commentary)
+			// Second pass: fallback to any compatible track (including commentary/AD)
 			if !mappedAudio {
 				for _, stream := range audioStreams {
 					if compatibleCodecs[stream.Codec] {
 						audioMap := fmt.Sprintf("0:%d", stream.Index)
 						args = append(args, "-map", audioMap)
-						log.Printf("[hls] session %s: mapped compatible audio stream %d (codec=%s, fallback including commentary)",
+						log.Printf("[hls] session %s: mapped compatible audio stream %d (codec=%s, fallback including commentary/AD)",
 							session.ID, stream.Index, stream.Codec)
 						break
 					}
@@ -1989,6 +2008,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 	// Log FFmpeg errors with timing
 	go func() {
 		buf := make([]byte, 4096)
+		var stderrContent strings.Builder  // NEW: Capture all stderr
 		lastLog := time.Now()
 		dvErrorCount := 0
 		hdrMetadataErrorCount := 0
@@ -1997,6 +2017,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 			n, err := stderr.Read(buf)
 			if n > 0 {
 				msg := string(buf[:n])
+				stderrContent.WriteString(msg)  // NEW: Save for classification
 				log.Printf("[hls] session %s ffmpeg stderr (t+%.1fs): %s",
 					session.ID, time.Since(startTime).Seconds(), msg)
 
@@ -2118,6 +2139,14 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 				}
 			}
 			if err != nil {
+				// NEW: Classify error on completion
+				if stderrContent.Len() > 0 {
+					errorInfo := m.classifyFFmpegError(stderrContent.String())
+					if errorInfo.Category != "unknown" {
+						log.Printf("[hls] session %s: FFmpeg error classification - category=%s severity=%s message=%s",
+							session.ID, errorInfo.Category, errorInfo.Severity, errorInfo.Message)
+					}
+				}
 				break
 			}
 		}
@@ -2179,6 +2208,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
+		lastPatternLog := time.Now()  // NEW: Track last pattern log
 
 		for {
 			select {
@@ -2200,6 +2230,15 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 				// Try to read /proc/{pid}/stat for CPU usage if available
 				if pid > 0 {
 					m.logProcessCPU(session.ID, pid)
+				}
+
+				// NEW: Log segment request patterns every 60 seconds
+				if time.Since(lastPatternLog) > 60*time.Second {
+					if pattern := m.analyzeSegmentPattern(session); pattern != nil {
+						log.Printf("[hls] session %s: SEGMENT_PATTERN - avg=%.1fms min=%.1fms max=%.1fms",
+							session.ID, pattern["avgIntervalMs"], pattern["minIntervalMs"], pattern["maxIntervalMs"])
+						lastPatternLog = time.Now()
+					}
 				}
 
 			case <-perfDone:
