@@ -472,12 +472,15 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
         keepaliveHealthRef.current.lastSuccessTime = Date.now();
         keepaliveHealthRef.current.consecutiveFailures = 0;
         
-        const failureRate = keepaliveHealthRef.current.totalFailed / keepaliveHealthRef.current.totalSent;
-        if (keepaliveHealthRef.current.isDegraded && failureRate < 0.2) {
-          console.log('[useHlsSession] ✅ Keepalive health RECOVERED', {
-            failureRate: (failureRate * 100).toFixed(1) + '%',
-          });
-          keepaliveHealthRef.current.isDegraded = false;
+        // Check for recovery from degraded state
+        if (keepaliveHealthRef.current.totalSent > 0) {
+          const failureRate = keepaliveHealthRef.current.totalFailed / keepaliveHealthRef.current.totalSent;
+          if (keepaliveHealthRef.current.isDegraded && failureRate < 0.2) {
+            console.log('[useHlsSession] ✅ Keepalive health RECOVERED', {
+              failureRate: (failureRate * 100).toFixed(1) + '%',
+            });
+            keepaliveHealthRef.current.isDegraded = false;
+          }
         }
 
         // Update state with keyframeDelta from backend (for subtitle sync)
@@ -516,17 +519,20 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
         keepaliveHealthRef.current.consecutiveFailures++;
         keepaliveHealthRef.current.totalFailed++;
         
-        const failureRate = keepaliveHealthRef.current.totalFailed / keepaliveHealthRef.current.totalSent;
-        
-        if (keepaliveHealthRef.current.consecutiveFailures === 3) {
-          console.error('[useHlsSession] ⚠️ KEEPALIVE DEGRADED - 3 consecutive failures');
-        }
-        
-        if (!keepaliveHealthRef.current.isDegraded && failureRate > 0.3) {
-          console.error('[useHlsSession] 🚨 KEEPALIVE HEALTH CRITICAL', {
-            failureRate: (failureRate * 100).toFixed(1) + '%',
-          });
-          keepaliveHealthRef.current.isDegraded = true;
+        // Check for degraded state
+        if (keepaliveHealthRef.current.totalSent > 0) {
+          const failureRate = keepaliveHealthRef.current.totalFailed / keepaliveHealthRef.current.totalSent;
+          
+          if (keepaliveHealthRef.current.consecutiveFailures === 3) {
+            console.error('[useHlsSession] ⚠️ KEEPALIVE DEGRADED - 3 consecutive failures');
+          }
+          
+          if (!keepaliveHealthRef.current.isDegraded && failureRate > 0.3) {
+            console.error('[useHlsSession] 🚨 KEEPALIVE HEALTH CRITICAL', {
+              failureRate: (failureRate * 100).toFixed(1) + '%',
+            });
+            keepaliveHealthRef.current.isDegraded = true;
+          }
         }
         
         console.warn('[useHlsSession] Keepalive failed:', error);

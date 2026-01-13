@@ -412,6 +412,10 @@ const (
 	hlsBufferPauseThreshold = 30 // ~2 minutes of buffer ahead (30 * 4s segments)
 	// Resume when buffer drops to this level
 	hlsBufferResumeThreshold = 20 // ~80 seconds of buffer ahead
+	
+	// Exponential weighted moving average alpha for playlist refresh interval
+	// Higher values (closer to 1.0) give more weight to recent measurements
+	hlsPlaylistRefreshAlpha = 0.3
 )
 
 
@@ -3252,11 +3256,10 @@ func (m *HLSManager) ServePlaylist(w http.ResponseWriter, r *http.Request, sessi
 	// Update last activity time (playlist requests indicate active playback)
 	session.mu.Lock()
 	session.LastSegmentRequest = time.Now()
-	session.LastPlaylistRequest = time.Now() // Track playlist refresh requests
 	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter on playlist request
 	session.mu.Unlock()
 	
-	// Update playlist refresh statistics
+	// Update playlist refresh statistics (sets LastPlaylistRequest)
 	m.updatePlaylistRefreshStats(session)
 
 	playlistPath := filepath.Join(session.OutputDir, "stream.m3u8")
@@ -3512,10 +3515,9 @@ func (m *HLSManager) updatePlaylistRefreshStats(session *HLSSession) {
 		if session.PlaylistRefreshInterval == 0 {
 			session.PlaylistRefreshInterval = interval
 		} else {
-			alpha := 0.3
 			session.PlaylistRefreshInterval = time.Duration(
-				float64(session.PlaylistRefreshInterval)*(1-alpha) + 
-				float64(interval)*alpha,
+				float64(session.PlaylistRefreshInterval)*(1-hlsPlaylistRefreshAlpha) + 
+				float64(interval)*hlsPlaylistRefreshAlpha,
 			)
 		}
 		
