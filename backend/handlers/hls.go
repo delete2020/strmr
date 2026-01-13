@@ -363,6 +363,10 @@ const (
 	hlsIdleTimeout = 30 * time.Second
 
 	// Extended timeout for HDR/HDR10+ content (Android decoder initialization can take 5-15s)
+	// We use 60s instead of 20-30s because:
+	// - Multi-signal detection requires 3 consecutive checks (3 * 5s intervals = 15s minimum)
+	// - Network buffering storms can compound with decoder delays
+	// - Provides cushion for device-specific variations (lower-end Android devices may be slower)
 	hlsHDRIdleTimeout = 60 * time.Second
 
 	// How long to wait for the first segment request before killing FFmpeg
@@ -2087,13 +2091,17 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 				// This prevents false positives during brief pauses (HDR decoder init, network buffering, etc.)
 				if segmentCount > 0 && idleTime > timeoutThreshold {
 					session.mu.Lock()
+					oldCount := session.ConsecutiveTimeoutChecks
 					session.ConsecutiveTimeoutChecks++
 					newConsecutiveTimeouts := session.ConsecutiveTimeoutChecks
 					session.mu.Unlock()
 
-					log.Printf("[hls] session %s: IDLE_CHECK - idle for %v (threshold=%v, consecutive=%d/%d, lastSegment=%v, lastKeepalive=%v)",
-						session.ID, idleTime, timeoutThreshold, newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks,
-						time.Since(lastRequest), time.Since(lastKeepalive))
+					// Only log when counter increases to reduce log spam
+					if newConsecutiveTimeouts != oldCount {
+						log.Printf("[hls] session %s: IDLE_CHECK - idle for %v (threshold=%v, consecutive=%d/%d, lastSegment=%v, lastKeepalive=%v)",
+							session.ID, idleTime, timeoutThreshold, newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks,
+							time.Since(lastRequest), time.Since(lastKeepalive))
+					}
 
 					// Only kill FFmpeg after multiple consecutive timeout checks
 					if newConsecutiveTimeouts >= hlsTimeoutConsecutiveChecks {
@@ -2603,7 +2611,6 @@ func (m *HLSManager) KeepAlive(w http.ResponseWriter, r *http.Request, sessionID
 	}
 
 	session.mu.Lock()
-	session.LastSegmentRequest = time.Now()
 	session.LastKeepaliveTime = time.Now()
 
 	// If frontend reports playback time, use it to update playback tracking for rate limiting and cleanup
