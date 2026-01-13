@@ -48,6 +48,40 @@ const isCommentaryTrack = (title: string | undefined): boolean => {
 };
 
 /**
+ * Checks if an audio track is an Audio Description track (for visually impaired).
+ */
+const isAudioDescriptionTrack = (title: string | undefined): boolean => {
+  if (!title) return false;
+  
+  const lowerTitle = title.toLowerCase().trim();
+  const adPatterns = [
+    'audio description',
+    'descriptive audio',
+    'descriptive',
+    'described',
+    'visual impaired',
+    'visually impaired',
+    'descriptive video service',
+    'dvs',
+    ' ad)',
+    '(ad)',
+    '[ad]',
+    ' ad ',
+    '-ad-',
+    '_ad_',
+  ];
+  
+  return adPatterns.some(pattern => lowerTitle.includes(pattern));
+};
+
+/**
+ * Combined check for tracks that should be avoided.
+ */
+const isCommentaryOrDescriptionTrack = (title: string | undefined): boolean => {
+  return isCommentaryTrack(title) || isAudioDescriptionTrack(title);
+};
+
+/**
  * Checks if a subtitle stream is marked as forced.
  * Checks isForced flag, disposition.forced, or title containing "forced".
  */
@@ -102,57 +136,60 @@ export const findAudioTrackByLanguage = (streams: AudioStreamMetadata[], preferr
 
   const normalizedPref = normalizeLanguageForMatching(preferredLanguage);
 
-  // Pass 1: Compatible codec (AAC, AC3, etc.) matching language, skipping commentary
+  // Pass 1: Compatible codec (AAC, AC3, etc.) matching language, skipping commentary and audio description
   for (const stream of streams) {
     if (
       matchesLanguage(stream, normalizedPref) &&
       isCompatibleAudioCodec(stream.codecName) &&
-      !isCommentaryTrack(stream.title)
+      !isCommentaryOrDescriptionTrack(stream.title)
     ) {
       return stream.index;
     }
   }
 
-  // Pass 2: Non-TrueHD codec matching language, skipping commentary
+  // Pass 2: Non-TrueHD codec matching language, skipping commentary and audio description
   // TrueHD is particularly problematic for streaming, so prefer DTS over TrueHD
   for (const stream of streams) {
     if (
       matchesLanguage(stream, normalizedPref) &&
       !isTrueHDCodec(stream.codecName) &&
-      !isCommentaryTrack(stream.title)
+      !isCommentaryOrDescriptionTrack(stream.title)
     ) {
       return stream.index;
     }
   }
 
-  // Pass 3: TrueHD/MLP matching language, skipping commentary (only if no other option)
+  // Pass 3: TrueHD/MLP matching language, skipping commentary and audio description (only if no other option)
   for (const stream of streams) {
     if (
       matchesLanguage(stream, normalizedPref) &&
       isTrueHDCodec(stream.codecName) &&
-      !isCommentaryTrack(stream.title)
+      !isCommentaryOrDescriptionTrack(stream.title)
     ) {
       return stream.index;
     }
   }
 
-  // Pass 4: Compatible codec matching language, including commentary
+  // Pass 4: Compatible codec matching language, including commentary and audio description (fallback)
   for (const stream of streams) {
     if (matchesLanguage(stream, normalizedPref) && isCompatibleAudioCodec(stream.codecName)) {
+      console.warn('[track-selection] ⚠️ Fallback to commentary/AD track:', stream.title);
       return stream.index;
     }
   }
 
-  // Pass 5: Non-TrueHD codec matching language, including commentary
+  // Pass 5: Non-TrueHD codec matching language, including commentary and audio description (fallback)
   for (const stream of streams) {
     if (matchesLanguage(stream, normalizedPref) && !isTrueHDCodec(stream.codecName)) {
+      console.warn('[track-selection] ⚠️ Fallback to commentary/AD track:', stream.title);
       return stream.index;
     }
   }
 
-  // Pass 6: TrueHD/MLP matching language, including commentary (last resort)
+  // Pass 6: TrueHD/MLP matching language, including commentary and audio description (last resort)
   for (const stream of streams) {
     if (matchesLanguage(stream, normalizedPref)) {
+      console.warn('[track-selection] ⚠️ Fallback to commentary/AD track:', stream.title);
       return stream.index;
     }
   }

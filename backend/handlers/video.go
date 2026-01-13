@@ -2042,7 +2042,7 @@ func (h *VideoHandler) StartHLSSession(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[video] creating HLS session for path=%q dv=%v dvProfile=%q hdr=%v start=%.3fs transcodingOffset=%.3fs audioTrack=%d subtitleTrack=%d",
 		cleanPath, hasDV, dvProfile, hasHDR, startSeconds, transcodingOffset, audioTrackIndex, subtitleTrackIndex)
 
-	session, err := h.hlsManager.CreateSession(r.Context(), cleanPath, path, hasDV, dvProfile, hasHDR, forceAAC, startSeconds, transcodingOffset, audioTrackIndex, subtitleTrackIndex, profileID, profileName, getClientIP(r))
+	session, err := h.hlsManager.CreateSession(r.Context(), cleanPath, path, hasDV, dvProfile, hasHDR, forceAAC, startSeconds, transcodingOffset, audioTrackIndex, subtitleTrackIndex, profileID, profileName, getClientIP(r), r)
 	if err != nil {
 		log.Printf("[video] failed to create HLS session: %v", err)
 		http.Error(w, fmt.Sprintf("failed to create HLS session: %v", err), http.StatusInternalServerError)
@@ -2324,7 +2324,7 @@ func (h *VideoHandler) CreateHLSSession(ctx context.Context, path string, hasDV 
 		hasHDR = true // DV Profile 7 has HDR10 base layer
 	}
 
-	session, err := h.hlsManager.CreateSession(ctx, path, path, hasDV, dvProfile, hasHDR, false, startOffset, 0, audioTrackIndex, subtitleTrackIndex, profileID, "", "")
+	session, err := h.hlsManager.CreateSession(ctx, path, path, hasDV, dvProfile, hasHDR, false, startOffset, 0, audioTrackIndex, subtitleTrackIndex, profileID, "", "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HLS session: %w", err)
 	}
