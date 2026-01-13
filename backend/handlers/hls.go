@@ -3454,14 +3454,14 @@ func (m *HLSManager) analyzeSegmentPattern(session *HLSSession) map[string]inter
 	}
 	
 	return map[string]interface{}{
-		"avgIntervalMs": average(intervals),
-		"minIntervalMs": min(intervals),
-		"maxIntervalMs": max(intervals),
+		"avgIntervalMs": averageFloat64(intervals),
+		"minIntervalMs": minFloat64(intervals),
+		"maxIntervalMs": maxFloat64(intervals),
 	}
 }
 
 // Helper functions for segment pattern analysis
-func average(vals []float64) float64 {
+func averageFloat64(vals []float64) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
@@ -3472,7 +3472,7 @@ func average(vals []float64) float64 {
 	return sum / float64(len(vals))
 }
 
-func min(vals []float64) float64 {
+func minFloat64(vals []float64) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
@@ -3485,7 +3485,7 @@ func min(vals []float64) float64 {
 	return m
 }
 
-func max(vals []float64) float64 {
+func maxFloat64(vals []float64) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
