@@ -53,7 +53,7 @@ const isCommentaryTrack = (title: string | undefined): boolean => {
 const isAudioDescriptionTrack = (title: string | undefined): boolean => {
   if (!title) return false;
   
-  const lowerTitle = title.toLowerCase();
+  const lowerTitle = title.toLowerCase().trim();
   const adPatterns = [
     'audio description',
     'descriptive audio',
