@@ -1663,6 +1663,27 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 		log.Printf("[hls] session %s: using INPUT seeking to %.3fs with -noaccurate_seek (HTTP Range, skips data)", session.ID, session.TranscodingOffset)
 	}
 
+	// Add probesize and analyzeduration for DV/HDR content to prevent A/V sync issues
+	// DV and HDR content have complex metadata that requires more analysis time
+	// Android TV in particular needs larger buffers for proper DV decoder initialization
+	if session.HasDV || session.HasHDR {
+		// Base values: 10MB probesize, 10 seconds analyzeduration
+		probeSizeBytes := 10 * 1024 * 1024
+		analyzeDurationMicros := 10 * 1000000
+
+		// Increase for Android platform (needs more time for DV/HDR decoder setup)
+		if session.Platform == "Android" {
+			probeSizeBytes = 20 * 1024 * 1024    // 20MB for Android
+			analyzeDurationMicros = 15 * 1000000 // 15 seconds for Android
+			log.Printf("[hls] session %s: using Android-optimized buffer sizes for DV/HDR (probesize=20MB, analyzeduration=15s)", session.ID)
+		} else {
+			log.Printf("[hls] session %s: using standard buffer sizes for DV/HDR (probesize=10MB, analyzeduration=10s)", session.ID)
+		}
+
+		args = append(args, "-probesize", fmt.Sprintf("%d", probeSizeBytes))
+		args = append(args, "-analyzeduration", fmt.Sprintf("%d", analyzeDurationMicros))
+	}
+
 	// Add input source - use proxy URL if available, otherwise use pipe
 	if proxyURL != "" {
 		args = append(args, "-i", proxyURL)
