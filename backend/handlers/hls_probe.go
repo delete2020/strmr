@@ -55,6 +55,39 @@ func isHLSCommentaryTrack(title string) bool {
 	return false
 }
 
+// isHLSAudioDescriptionTrack checks if an audio track is for visually impaired users
+func isHLSAudioDescriptionTrack(title string) bool {
+	lowerTitle := strings.ToLower(strings.TrimSpace(title))
+	adPatterns := []string{
+		"audio description",
+		"descriptive audio",
+		"descriptive",
+		"described",
+		"visual impaired",
+		"visually impaired",
+		"descriptive video service",
+		"dvs",
+		" ad)",
+		"(ad)",
+		"[ad]",
+		" ad ",
+		"-ad-",
+		"_ad_",
+	}
+	
+	for _, pattern := range adPatterns {
+		if strings.Contains(lowerTitle, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// isHLSCommentaryOrDescriptionTrack combines both checks
+func isHLSCommentaryOrDescriptionTrack(title string) bool {
+	return isHLSCommentaryTrack(title) || isHLSAudioDescriptionTrack(title)
+}
+
 // UnifiedProbeResult holds all data extracted from a single ffprobe call
 type UnifiedProbeResult struct {
 	Duration           float64

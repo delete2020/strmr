@@ -2106,7 +2106,7 @@ func (h *VideoHandler) StartLiveHLSSession(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("[video] creating live HLS session for URL: %s", liveURL)
 
-	session, err := h.hlsManager.CreateLiveSession(r.Context(), liveURL)
+	session, err := h.hlsManager.CreateLiveSession(r.Context(), liveURL, r)
 	if err != nil {
 		log.Printf("[video] failed to create live HLS session: %v", err)
 		http.Error(w, fmt.Sprintf("failed to create live HLS session: %v", err), http.StatusInternalServerError)
