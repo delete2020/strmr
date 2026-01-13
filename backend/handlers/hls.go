@@ -432,6 +432,9 @@ const (
 	hlsBufferPauseThreshold = 30 // ~2 minutes of buffer ahead (30 * 4s segments)
 	// Resume when buffer drops to this level
 	hlsBufferResumeThreshold = 20 // ~80 seconds of buffer ahead
+	
+	// Timeout analysis log directory
+	timeoutAnalysisLogDir = "/tmp/novastream-hls"
 )
 
 var (
@@ -486,13 +489,15 @@ func extractPlatform(userAgent string) string {
 }
 
 // extractResolution returns resolution string from probe data
+// Currently returns "unknown" since UnifiedProbeResult doesn't contain resolution info
+// TODO: Add resolution fields to UnifiedProbeResult for enhanced logging
 func extractResolution(session *HLSSession) string {
 	if session == nil || session.ProbeData == nil {
 		return "unknown"
 	}
 	
-	// For now, return unknown since UnifiedProbeResult doesn't have resolution info
-	// This could be enhanced by adding resolution to UnifiedProbeResult in the future
+	// UnifiedProbeResult doesn't currently have resolution info
+	// This could be enhanced by adding Width/Height fields to the probe result
 	return "unknown"
 }
 
@@ -514,18 +519,20 @@ func extractCodec(session *HLSSession) string {
 }
 
 // logTimeoutAnalysis writes a MediaTimeoutLog entry to the JSONL file
-func logTimeoutAnalysis(log MediaTimeoutLog) {
+func logTimeoutAnalysis(entry MediaTimeoutLog) {
 	// Ensure the directory exists
-	logDir := "/tmp/novastream-hls"
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return // Silent failure - don't break HLS streaming if logging fails
+	if err := os.MkdirAll(timeoutAnalysisLogDir, 0755); err != nil {
+		// Debug log on failure, but don't break HLS streaming
+		log.Printf("[hls] warning: failed to create timeout analysis log directory: %v", err)
+		return
 	}
 	
-	logPath := filepath.Join(logDir, "timeout-analysis.jsonl")
+	logPath := filepath.Join(timeoutAnalysisLogDir, "timeout-analysis.jsonl")
 	
 	// Marshal to JSON
-	data, err := json.Marshal(log)
+	data, err := json.Marshal(entry)
 	if err != nil {
+		log.Printf("[hls] warning: failed to marshal timeout analysis log: %v", err)
 		return
 	}
 	
@@ -535,12 +542,20 @@ func logTimeoutAnalysis(log MediaTimeoutLog) {
 	
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		log.Printf("[hls] warning: failed to open timeout analysis log: %v", err)
 		return
 	}
 	defer f.Close()
 	
 	f.Write(data)
 	f.WriteString("\n")
+}
+
+// isBufferProgressing checks if the player's buffer is advancing
+func isBufferProgressing(session *HLSSession) bool {
+	return session.MaxSegmentRequested > session.PreviousMaxSegment && 
+	       !session.MaxSegmentLastUpdate.IsZero() && 
+	       time.Since(session.MaxSegmentLastUpdate) < 30*time.Second
 }
 
 // sessionHealthQuorum checks multiple signals to determine if a session is healthy
@@ -565,9 +580,7 @@ func sessionHealthQuorum(session *HLSSession, lastRequest, lastKeepalive time.Ti
 	}
 	
 	// Signal 4: Buffer is progressing (MaxSegment increased recently)
-	if session.MaxSegmentRequested > session.PreviousMaxSegment && 
-	   !session.MaxSegmentLastUpdate.IsZero() && 
-	   time.Since(session.MaxSegmentLastUpdate) < 30*time.Second {
+	if isBufferProgressing(session) {
 		return true, "buffer_progressing"
 	}
 	
@@ -577,8 +590,9 @@ func sessionHealthQuorum(session *HLSSession, lastRequest, lastKeepalive time.Ti
 		return true, "session_initializing"
 	}
 	
-	// Signal 6: Check if FFmpeg is actively writing segments (most recent segment file is fresh)
-	// This is a simple check - if we've created segments recently, FFmpeg is active
+	// Signal 6: FFmpeg started creating segments very recently (initial startup phase)
+	// Note: This is a startup-phase check, not ongoing activity detection
+	// Ongoing activity is better detected by buffer progression (Signal 4)
 	if session.SegmentsCreated > 0 && time.Since(session.FirstSegmentTime) < 30*time.Second {
 		return true, "ffmpeg_active"
 	}
