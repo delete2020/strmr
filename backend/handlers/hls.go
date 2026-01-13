@@ -281,6 +281,37 @@ func (t *throttledReader) Read(p []byte) (n int, err error) {
 	return t.r.Read(p)
 }
 
+// MediaTimeoutLog represents detailed timeout analysis data for per-file logging
+type MediaTimeoutLog struct {
+	SessionID          string    `json:"sessionID"`
+	FilePath           string    `json:"filePath,omitempty"`
+	FileName           string    `json:"fileName,omitempty"`
+	MediaType          string    `json:"mediaType,omitempty"`          // "DV", "HDR10", "HDR10+", "SDR", "DV+HDR10"
+	DVProfile          string    `json:"dvProfile,omitempty"`          // "5", "7", "8.1", "8.4", etc.
+	Resolution         string    `json:"resolution,omitempty"`         // "4K", "1080p", "720p"
+	Codec              string    `json:"codec,omitempty"`              // "HEVC", "H264", "AV1"
+	Platform           string    `json:"platform,omitempty"`           // From User-Agent: "Android", "iOS", "Web"
+	TimeoutThreshold   int       `json:"timeoutThreshold"`             // 30 or 60 (seconds)
+	SessionStartTime   time.Time `json:"sessionStartTime,omitempty"`
+	LastSegmentTime    time.Time `json:"lastSegmentTime,omitempty"`
+	LastKeepaliveTime  time.Time `json:"lastKeepaliveTime,omitempty"`
+	TimeoutCheckNumber int       `json:"timeoutCheckNumber,omitempty"` // 1, 2, 3
+	SegmentsServed     int       `json:"segmentsServed,omitempty"`
+	LastSegmentNumber  int       `json:"lastSegmentNumber,omitempty"`
+	MaxBufferAhead     int       `json:"maxBufferAhead,omitempty"` // Segments ahead of playback
+	KeepaliveCount     int       `json:"keepaliveCount,omitempty"`
+	IdleSeconds        float64   `json:"idleSeconds,omitempty"`
+	ThresholdSeconds   int       `json:"thresholdSeconds,omitempty"`
+	ConsecutiveChecks  string    `json:"consecutiveChecks,omitempty"` // "1/3", "2/3", "3/3"
+	TimeoutTriggered   bool      `json:"timeoutTriggered,omitempty"`
+	RecoveryOccurred   bool      `json:"recoveryOccurred,omitempty"`
+	Event              string    `json:"event"`             // "creation", "idle_check", "timeout", "recovery", "cleanup"
+	Decision           string    `json:"decision,omitempty"`// "healthy", "timeout"
+	Reason             string    `json:"reason,omitempty"`  // "segment_fresh", "keepalive_fresh", etc.
+	TestingMode        bool      `json:"testingMode,omitempty"`
+	KeepaliveDisabled  bool      `json:"keepaliveDisabled,omitempty"`
+}
+
 // HLSSession represents an active HLS transcoding session
 type HLSSession struct {
 	ID           string
@@ -307,6 +338,7 @@ type HLSSession struct {
 	ProfileID   string
 	ProfileName string
 	ClientIP    string
+	UserAgent   string // Client User-Agent for platform detection
 
 	// Track selection (-1 means use default)
 	AudioTrackIndex    int // Selected audio stream index (ffprobe index), -1 = all/default
@@ -322,6 +354,7 @@ type HLSSession struct {
 	LastSegmentRequest   time.Time
 	SegmentRequestCount  int
 	IdleTimeoutTriggered bool
+	KeepaliveCount       int // Total number of keepalive requests received
 
 	// Segment tracking for cleanup and rate limiting
 	MinSegmentRequested      int // Minimum segment number that has been requested (-1 = none yet)
@@ -335,6 +368,7 @@ type HLSSession struct {
 	// Multi-signal timeout detection (prevents false positives during decoder transitions)
 	ConsecutiveTimeoutChecks int       // Number of consecutive timeout checks that exceeded threshold
 	LastKeepaliveTime        time.Time // Last keepalive request (even without time parameter)
+	LastStrongKeepaliveTime  time.Time // Last keepalive with ?time= parameter (strong signal)
 
 	// Input error recovery (for usenet disconnections)
 	InputErrorDetected bool // Set to true when FFmpeg input stream fails (usenet disconnect)
@@ -396,6 +430,115 @@ const (
 	// Resume when buffer drops to this level
 	hlsBufferResumeThreshold = 20 // ~80 seconds of buffer ahead
 )
+
+var (
+	// Testing toggle: disable keepalive requirement for testing (uses segments only)
+	// Set HLS_DISABLE_KEEPALIVE_CHECK=true to enable
+	hlsDisableKeepaliveRequirement = os.Getenv("HLS_DISABLE_KEEPALIVE_CHECK") == "true"
+	
+	// Mutex for timeout analysis log file
+	timeoutAnalysisLogMu sync.Mutex
+)
+
+// extractMediaType returns a human-readable media type from session probe data
+func extractMediaType(session *HLSSession) string {
+	if session == nil {
+		return "unknown"
+	}
+	
+	hasDV := session.HasDV
+	hasHDR := session.HasHDR
+	
+	if hasDV && hasHDR {
+		return "DV+HDR10"
+	} else if hasDV {
+		return "DV"
+	} else if hasHDR {
+		// Try to detect HDR10+ vs HDR10 from probe data
+		if session.ProbeData != nil {
+			// HDR10+ has dynamic metadata
+			// For now, just return HDR10 (can be enhanced later)
+			return "HDR10"
+		}
+		return "HDR10"
+	}
+	return "SDR"
+}
+
+// extractPlatform returns platform name from User-Agent string
+func extractPlatform(userAgent string) string {
+	ua := strings.ToLower(userAgent)
+	if strings.Contains(ua, "android") {
+		return "Android"
+	} else if strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") || strings.Contains(ua, "ios") {
+		return "iOS"
+	} else if strings.Contains(ua, "macintosh") || strings.Contains(ua, "mac os") {
+		return "macOS"
+	} else if strings.Contains(ua, "windows") {
+		return "Windows"
+	} else if strings.Contains(ua, "linux") {
+		return "Linux"
+	}
+	return "Web"
+}
+
+// extractResolution returns resolution string from probe data
+func extractResolution(session *HLSSession) string {
+	if session == nil || session.ProbeData == nil {
+		return "unknown"
+	}
+	
+	// For now, return unknown since UnifiedProbeResult doesn't have resolution info
+	// This could be enhanced by adding resolution to UnifiedProbeResult in the future
+	return "unknown"
+}
+
+// extractCodec returns video codec from probe data
+func extractCodec(session *HLSSession) string {
+	if session == nil || session.ProbeData == nil {
+		return "unknown"
+	}
+	
+	codec := strings.ToUpper(session.ProbeData.VideoCodec)
+	if codec == "HEVC" || codec == "H265" {
+		return "HEVC"
+	} else if codec == "H264" {
+		return "H264"
+	} else if codec == "AV1" {
+		return "AV1"
+	}
+	return codec
+}
+
+// logTimeoutAnalysis writes a MediaTimeoutLog entry to the JSONL file
+func logTimeoutAnalysis(log MediaTimeoutLog) {
+	// Ensure the directory exists
+	logDir := "/tmp/novastream-hls"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return // Silent failure - don't break HLS streaming if logging fails
+	}
+	
+	logPath := filepath.Join(logDir, "timeout-analysis.jsonl")
+	
+	// Marshal to JSON
+	data, err := json.Marshal(log)
+	if err != nil {
+		return
+	}
+	
+	// Append to file (with mutex for thread safety)
+	timeoutAnalysisLogMu.Lock()
+	defer timeoutAnalysisLogMu.Unlock()
+	
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	
+	f.Write(data)
+	f.WriteString("\n")
+}
 
 
 // HLSManager manages HLS transcoding sessions
@@ -682,7 +825,7 @@ func (m *HLSManager) buildLocalWebDAVURLFromPath(path string) (string, bool) {
 }
 
 // CreateSession starts a new HLS transcoding session
-func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPath string, hasDV bool, dvProfile string, hasHDR bool, forceAAC bool, startOffset float64, transcodingOffset float64, audioTrackIndex int, subtitleTrackIndex int, profileID string, profileName string, clientIP string) (*HLSSession, error) {
+func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPath string, hasDV bool, dvProfile string, hasHDR bool, forceAAC bool, startOffset float64, transcodingOffset float64, audioTrackIndex int, subtitleTrackIndex int, profileID string, profileName string, clientIP string, userAgent string) (*HLSSession, error) {
 	sessionID := generateSessionID()
 	outputDir := filepath.Join(m.baseDir, sessionID)
 
@@ -772,6 +915,7 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 		ProfileID:           profileID,
 		ProfileName:         profileName,
 		ClientIP:            clientIP,
+		UserAgent:           userAgent,
 		AudioTrackIndex:     audioTrackIndex,
 		SubtitleTrackIndex:  subtitleTrackIndex,
 		StreamStartTime:      now,
@@ -800,6 +944,23 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 	}()
 
 	log.Printf("[hls] created session %s for path %q (DV=%v, duration=%.2fs, startOffset=%.2fs)", sessionID, path, hasDV, duration, startOffset)
+
+	// Log session creation to timeout analysis file
+	go logTimeoutAnalysis(MediaTimeoutLog{
+		SessionID:         sessionID,
+		FilePath:          originalPath,
+		FileName:          filepath.Base(originalPath),
+		MediaType:         extractMediaType(session),
+		DVProfile:         dvProfile,
+		Resolution:        extractResolution(session),
+		Codec:             extractCodec(session),
+		Platform:          extractPlatform(userAgent),
+		TimeoutThreshold:  int(hlsIdleTimeout.Seconds()),
+		SessionStartTime:  now,
+		Event:             "creation",
+		TestingMode:       hlsDisableKeepaliveRequirement,
+		KeepaliveDisabled: hlsDisableKeepaliveRequirement,
+	})
 
 	// Return immediately - modern HLS players (AVPlayer, ExoPlayer) handle empty playlists
 	// by polling until segments are available. This eliminates the 5-6 second blocking wait.
@@ -2053,8 +2214,14 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 
 				// Use the most recent activity indicator (either segment request or keepalive)
 				lastActivity := lastRequest
-				if lastKeepalive.After(lastActivity) {
+				if !hlsDisableKeepaliveRequirement && lastKeepalive.After(lastActivity) {
 					lastActivity = lastKeepalive
+				}
+
+				// Log when testing mode is active
+				if hlsDisableKeepaliveRequirement && lastKeepalive.After(lastRequest) {
+					log.Printf("[hls] session %s: TESTING MODE - keepalive check disabled, using segments only (lastSeg=%v, lastKA=%v)",
+						session.ID, time.Since(lastRequest), time.Since(lastKeepalive))
 				}
 
 				idleTime := time.Since(lastActivity)
@@ -2101,6 +2268,36 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 						log.Printf("[hls] session %s: IDLE_CHECK - idle for %v (threshold=%v, consecutive=%d/%d, lastSegment=%v, lastKeepalive=%v)",
 							session.ID, idleTime, timeoutThreshold, newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks,
 							time.Since(lastRequest), time.Since(lastKeepalive))
+						
+						// Log to timeout analysis file
+						session.mu.RLock()
+						go logTimeoutAnalysis(MediaTimeoutLog{
+							SessionID:          session.ID,
+							FilePath:           session.OriginalPath,
+							FileName:           filepath.Base(session.OriginalPath),
+							MediaType:          extractMediaType(session),
+							DVProfile:          session.DVProfile,
+							Resolution:         extractResolution(session),
+							Codec:              extractCodec(session),
+							Platform:           extractPlatform(session.UserAgent),
+							TimeoutThreshold:   int(timeoutThreshold.Seconds()),
+							SessionStartTime:   session.CreatedAt,
+							LastSegmentTime:    lastRequest,
+							LastKeepaliveTime:  lastKeepalive,
+							TimeoutCheckNumber: newConsecutiveTimeouts,
+							SegmentsServed:     segmentCount,
+							LastSegmentNumber:  session.LastSegmentServed,
+							MaxBufferAhead:     session.MaxSegmentRequested - session.LastPlaybackSegment,
+							KeepaliveCount:     session.KeepaliveCount,
+							IdleSeconds:        idleTime.Seconds(),
+							ThresholdSeconds:   int(timeoutThreshold.Seconds()),
+							ConsecutiveChecks:  fmt.Sprintf("%d/%d", newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks),
+							Event:              "idle_check",
+							Decision:           "pending",
+							TestingMode:        hlsDisableKeepaliveRequirement,
+							KeepaliveDisabled:  hlsDisableKeepaliveRequirement,
+						})
+						session.mu.RUnlock()
 					}
 
 					// Only kill FFmpeg after multiple consecutive timeout checks
@@ -2111,6 +2308,37 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 						session.mu.Lock()
 						session.IdleTimeoutTriggered = true
 						session.mu.Unlock()
+						
+						// Log timeout trigger to analysis file
+						session.mu.RLock()
+						go logTimeoutAnalysis(MediaTimeoutLog{
+							SessionID:          session.ID,
+							FilePath:           session.OriginalPath,
+							FileName:           filepath.Base(session.OriginalPath),
+							MediaType:          extractMediaType(session),
+							DVProfile:          session.DVProfile,
+							Resolution:         extractResolution(session),
+							Codec:              extractCodec(session),
+							Platform:           extractPlatform(session.UserAgent),
+							TimeoutThreshold:   int(timeoutThreshold.Seconds()),
+							SessionStartTime:   session.CreatedAt,
+							LastSegmentTime:    lastRequest,
+							LastKeepaliveTime:  lastKeepalive,
+							TimeoutCheckNumber: newConsecutiveTimeouts,
+							SegmentsServed:     segmentCount,
+							LastSegmentNumber:  session.LastSegmentServed,
+							KeepaliveCount:     session.KeepaliveCount,
+							IdleSeconds:        idleTime.Seconds(),
+							ThresholdSeconds:   int(timeoutThreshold.Seconds()),
+							ConsecutiveChecks:  fmt.Sprintf("%d/%d", newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks),
+							TimeoutTriggered:   true,
+							Event:              "timeout",
+							Decision:           "timeout",
+							Reason:             "idle_exceeded_threshold",
+							TestingMode:        hlsDisableKeepaliveRequirement,
+							KeepaliveDisabled:  hlsDisableKeepaliveRequirement,
+						})
+						session.mu.RUnlock()
 
 						// Cancel the context to stop FFmpeg
 						if session.Cancel != nil {
@@ -2129,11 +2357,50 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 					// Activity detected within threshold - reset consecutive timeout counter
 					session.mu.Lock()
 					if session.ConsecutiveTimeoutChecks > 0 {
-						log.Printf("[hls] session %s: activity detected, resetting timeout counter (was %d)",
-							session.ID, session.ConsecutiveTimeoutChecks)
+						// Determine which signal detected activity
+						activitySource := "segment"
+						reason := "segment_fresh"
+						if lastKeepalive.After(lastRequest) {
+							activitySource = "keepalive"
+							reason = "keepalive_fresh"
+						}
+						log.Printf("[hls] session %s: activity detected (%s), resetting timeout counter (was %d)",
+							session.ID, activitySource, session.ConsecutiveTimeoutChecks)
+						
+						// Log recovery to analysis file
+						_ = session.ConsecutiveTimeoutChecks // old value for potential future use
 						session.ConsecutiveTimeoutChecks = 0
+						session.mu.Unlock()
+						
+						session.mu.RLock()
+						go logTimeoutAnalysis(MediaTimeoutLog{
+							SessionID:          session.ID,
+							FilePath:           session.OriginalPath,
+							FileName:           filepath.Base(session.OriginalPath),
+							MediaType:          extractMediaType(session),
+							DVProfile:          session.DVProfile,
+							Resolution:         extractResolution(session),
+							Codec:              extractCodec(session),
+							Platform:           extractPlatform(session.UserAgent),
+							TimeoutThreshold:   int(timeoutThreshold.Seconds()),
+							SessionStartTime:   session.CreatedAt,
+							LastSegmentTime:    lastRequest,
+							LastKeepaliveTime:  lastKeepalive,
+							SegmentsServed:     segmentCount,
+							KeepaliveCount:     session.KeepaliveCount,
+							IdleSeconds:        idleTime.Seconds(),
+							ConsecutiveChecks:  fmt.Sprintf("0/%d", hlsTimeoutConsecutiveChecks),
+							RecoveryOccurred:   true,
+							Event:              "recovery",
+							Decision:           "healthy",
+							Reason:             reason,
+							TestingMode:        hlsDisableKeepaliveRequirement,
+							KeepaliveDisabled:  hlsDisableKeepaliveRequirement,
+						})
+						session.mu.RUnlock()
+					} else {
+						session.mu.Unlock()
 					}
-					session.mu.Unlock()
 				}
 
 			case <-idleDone:
@@ -2610,11 +2877,15 @@ func (m *HLSManager) KeepAlive(w http.ResponseWriter, r *http.Request, sessionID
 		return
 	}
 
+	now := time.Now()
 	session.mu.Lock()
-	session.LastKeepaliveTime = time.Now()
+	session.LastSegmentRequest = now   // Keepalive is a form of activity
+	session.LastKeepaliveTime = now    // Always update (weak or strong keepalive)
+	session.KeepaliveCount++           // Track total keepalive count
 
 	// If frontend reports playback time, use it to update playback tracking for rate limiting and cleanup
 	if timeStr := r.URL.Query().Get("time"); timeStr != "" {
+		session.LastStrongKeepaliveTime = now // Only update for strong keepalives with time parameter
 		if playbackTime, err := strconv.ParseFloat(timeStr, 64); err == nil && playbackTime >= 0 {
 			// For warm starts, the frontend reports absolute media time but HLS segments start from 0
 			// Adjust for StartOffset to get the actual HLS segment number
@@ -2655,9 +2926,15 @@ func (m *HLSManager) KeepAlive(w http.ResponseWriter, r *http.Request, sessionID
 	actualStartOffset := session.ActualStartOffset
 	keyframeDelta := actualStartOffset - startOffset
 	duration := session.Duration
+	hasTimeParam := r.URL.Query().Get("time") != ""
 	session.mu.Unlock()
 
-	log.Printf("[hls] session %s: keepalive received, extended idle timeout", sessionID)
+	// Log keepalive type for debugging
+	if hasTimeParam {
+		log.Printf("[hls] session %s: keepalive received (strong), extended idle timeout", sessionID)
+	} else {
+		log.Printf("[hls] session %s: keepalive received (weak), extended idle timeout", sessionID)
+	}
 
 	// Return segment timing info for accurate subtitle sync
 	// The frontend can use this to calculate precise media time:
