@@ -369,6 +369,9 @@ type HLSSession struct {
 	ConsecutiveTimeoutChecks int       // Number of consecutive timeout checks that exceeded threshold
 	LastKeepaliveTime        time.Time // Last keepalive request (even without time parameter)
 	LastStrongKeepaliveTime  time.Time // Last keepalive with ?time= parameter (strong signal)
+	LastPlaylistRequest      time.Time // Last time the playlist was requested (players poll every 2-10s)
+	PreviousMaxSegment       int       // Previous MaxSegmentRequested for buffer progress detection
+	MaxSegmentLastUpdate     time.Time // When MaxSegmentRequested was last updated
 
 	// Input error recovery (for usenet disconnections)
 	InputErrorDetected bool // Set to true when FFmpeg input stream fails (usenet disconnect)
@@ -538,6 +541,50 @@ func logTimeoutAnalysis(log MediaTimeoutLog) {
 	
 	f.Write(data)
 	f.WriteString("\n")
+}
+
+// sessionHealthQuorum checks multiple signals to determine if a session is healthy
+// Returns (isHealthy, reason) - uses tiered priority system
+func sessionHealthQuorum(session *HLSSession, lastRequest, lastKeepalive time.Time) (bool, string) {
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+	
+	// Signal 1 (highest priority): Recent segment requests
+	if time.Since(lastRequest) < 15*time.Second {
+		return true, "segment_fresh"
+	}
+	
+	// Signal 2: Recent keepalive requests
+	if !hlsDisableKeepaliveRequirement && time.Since(lastKeepalive) < 15*time.Second {
+		return true, "keepalive_fresh"
+	}
+	
+	// Signal 3: Recent playlist requests (players poll every 2-10s during playback)
+	if !session.LastPlaylistRequest.IsZero() && time.Since(session.LastPlaylistRequest) < 15*time.Second {
+		return true, "playlist_fresh"
+	}
+	
+	// Signal 4: Buffer is progressing (MaxSegment increased recently)
+	if session.MaxSegmentRequested > session.PreviousMaxSegment && 
+	   !session.MaxSegmentLastUpdate.IsZero() && 
+	   time.Since(session.MaxSegmentLastUpdate) < 30*time.Second {
+		return true, "buffer_progressing"
+	}
+	
+	// Signal 5: Session is young and actively creating segments
+	sessionAge := time.Since(session.CreatedAt)
+	if sessionAge < 2*time.Minute && session.SegmentsCreated > 5 {
+		return true, "session_initializing"
+	}
+	
+	// Signal 6: Check if FFmpeg is actively writing segments (most recent segment file is fresh)
+	// This is a simple check - if we've created segments recently, FFmpeg is active
+	if session.SegmentsCreated > 0 && time.Since(session.FirstSegmentTime) < 30*time.Second {
+		return true, "ffmpeg_active"
+	}
+	
+	// No signals indicate health
+	return false, "idle"
 }
 
 
@@ -2257,17 +2304,31 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 				// Multi-signal timeout detection: require multiple consecutive checks exceeding threshold
 				// This prevents false positives during brief pauses (HDR decoder init, network buffering, etc.)
 				if segmentCount > 0 && idleTime > timeoutThreshold {
-					session.mu.Lock()
-					oldCount := session.ConsecutiveTimeoutChecks
-					session.ConsecutiveTimeoutChecks++
-					newConsecutiveTimeouts := session.ConsecutiveTimeoutChecks
-					session.mu.Unlock()
+					// Check health quorum before considering timeout
+					isHealthy, healthReason := sessionHealthQuorum(session, lastRequest, lastKeepalive)
+					
+					if isHealthy {
+						// Health check passed - reset timeout counter
+						session.mu.Lock()
+						if session.ConsecutiveTimeoutChecks > 0 {
+							log.Printf("[hls] session %s: health check PASS (%s), resetting timeout counter (was %d)",
+								session.ID, healthReason, session.ConsecutiveTimeoutChecks)
+							session.ConsecutiveTimeoutChecks = 0
+						}
+						session.mu.Unlock()
+					} else {
+						// Health check failed - increment timeout counter
+						session.mu.Lock()
+						oldCount := session.ConsecutiveTimeoutChecks
+						session.ConsecutiveTimeoutChecks++
+						newConsecutiveTimeouts := session.ConsecutiveTimeoutChecks
+						session.mu.Unlock()
 
-					// Only log when counter increases to reduce log spam
-					if newConsecutiveTimeouts != oldCount {
-						log.Printf("[hls] session %s: IDLE_CHECK - idle for %v (threshold=%v, consecutive=%d/%d, lastSegment=%v, lastKeepalive=%v)",
-							session.ID, idleTime, timeoutThreshold, newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks,
-							time.Since(lastRequest), time.Since(lastKeepalive))
+						// Only log when counter increases to reduce log spam
+						if newConsecutiveTimeouts != oldCount {
+							log.Printf("[hls] session %s: IDLE_CHECK - idle for %v (threshold=%v, consecutive=%d/%d, lastSegment=%v, lastKeepalive=%v, health=%s)",
+								session.ID, idleTime, timeoutThreshold, newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks,
+								time.Since(lastRequest), time.Since(lastKeepalive), healthReason)
 						
 						// Log to timeout analysis file
 						session.mu.RLock()
@@ -2353,6 +2414,7 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 						}
 						return
 					}
+					} // end health check failed
 				} else {
 					// Activity detected within threshold - reset consecutive timeout counter
 					session.mu.Lock()
@@ -2896,7 +2958,9 @@ func (m *HLSManager) KeepAlive(w http.ResponseWriter, r *http.Request, sessionID
 			// Calculate segment number from HLS stream time (hlsSegmentDuration = 4 seconds)
 			segmentNum := int(hlsTime / hlsSegmentDuration)
 			if segmentNum > session.MaxSegmentRequested {
+				session.PreviousMaxSegment = session.MaxSegmentRequested // Track previous for buffer progress
 				session.MaxSegmentRequested = segmentNum
+				session.MaxSegmentLastUpdate = now // Track when buffer progressed
 				log.Printf("[hls] session %s: keepalive updated MaxSegmentRequested to %d (mediaTime=%.1fs, hlsTime=%.1fs, startOffset=%.1fs)",
 					sessionID, segmentNum, playbackTime, hlsTime, session.StartOffset)
 			}
@@ -3227,6 +3291,7 @@ func (m *HLSManager) ServePlaylist(w http.ResponseWriter, r *http.Request, sessi
 	// Update last activity time (playlist requests indicate active playback)
 	session.mu.Lock()
 	session.LastSegmentRequest = time.Now()
+	session.LastPlaylistRequest = time.Now() // Track playlist polling frequency
 	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter on playlist request
 	session.mu.Unlock()
 
@@ -3415,7 +3480,9 @@ func (m *HLSManager) ServeSegment(w http.ResponseWriter, r *http.Request, sessio
 			log.Printf("[hls] session %s: updated MinSegmentRequested to %d", sessionID, segmentNum)
 		}
 		if segmentNum > session.MaxSegmentRequested {
+			session.PreviousMaxSegment = session.MaxSegmentRequested // Track previous for buffer progress
 			session.MaxSegmentRequested = segmentNum
+			session.MaxSegmentLastUpdate = time.Now() // Track when buffer progressed
 			log.Printf("[hls] session %s: updated MaxSegmentRequested to %d", sessionID, segmentNum)
 		}
 		session.mu.Unlock()
