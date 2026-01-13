@@ -82,6 +82,39 @@ func IsCommentaryTrack(title string) bool {
 	return false
 }
 
+// IsAudioDescriptionTrack checks if an audio track is for visually impaired users
+func IsAudioDescriptionTrack(title string) bool {
+	lowerTitle := strings.ToLower(strings.TrimSpace(title))
+	adPatterns := []string{
+		"audio description",
+		"descriptive audio",
+		"descriptive",
+		"described",
+		"visual impaired",
+		"visually impaired",
+		"descriptive video service",
+		"dvs",
+		" ad)",
+		"(ad)",
+		"[ad]",
+		" ad ",
+		"-ad-",
+		"_ad_",
+	}
+	
+	for _, pattern := range adPatterns {
+		if strings.Contains(lowerTitle, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsCommentaryOrDescriptionTrack combines both checks
+func IsCommentaryOrDescriptionTrack(title string) bool {
+	return IsCommentaryTrack(title) || IsAudioDescriptionTrack(title)
+}
+
 // matchesLanguage checks if a stream matches the preferred language
 func matchesLanguage(language, title, normalizedPref string) bool {
 	language = strings.ToLower(strings.TrimSpace(language))
@@ -113,64 +146,64 @@ func FindAudioTrackByLanguage(streams []AudioStreamInfo, preferredLanguage strin
 
 	normalizedPref := strings.ToLower(strings.TrimSpace(preferredLanguage))
 
-	// Pass 1: Compatible codec (AAC, AC3, etc.) matching language, skipping commentary
+	// Pass 1: Compatible codec (AAC, AC3, etc.) matching language, skipping commentary/AD
 	for _, stream := range streams {
 		if matchesLanguage(stream.Language, stream.Title, normalizedPref) &&
 			CompatibleAudioCodecs[strings.ToLower(stream.Codec)] &&
-			!IsCommentaryTrack(stream.Title) {
+			!IsCommentaryOrDescriptionTrack(stream.Title) {
 			log.Printf("[track] Preferred compatible audio track %d (%s) for language %q",
 				stream.Index, stream.Codec, preferredLanguage)
 			return stream.Index
 		}
 	}
 
-	// Pass 2: Non-TrueHD incompatible codec (DTS, etc.) matching language, skipping commentary
+	// Pass 2: Non-TrueHD incompatible codec (DTS, etc.) matching language, skipping commentary/AD
 	// TrueHD is particularly problematic for streaming, so prefer DTS over TrueHD
 	for _, stream := range streams {
 		if matchesLanguage(stream.Language, stream.Title, normalizedPref) &&
 			!IsTrueHDCodec(stream.Codec) &&
-			!IsCommentaryTrack(stream.Title) {
+			!IsCommentaryOrDescriptionTrack(stream.Title) {
 			log.Printf("[track] Selected non-TrueHD audio track %d (%s) for language %q - will need HLS transcoding",
 				stream.Index, stream.Codec, preferredLanguage)
 			return stream.Index
 		}
 	}
 
-	// Pass 3: TrueHD/MLP matching language, skipping commentary (only if no other option)
+	// Pass 3: TrueHD/MLP matching language, skipping commentary/AD (only if no other option)
 	for _, stream := range streams {
 		if matchesLanguage(stream.Language, stream.Title, normalizedPref) &&
 			IsTrueHDCodec(stream.Codec) &&
-			!IsCommentaryTrack(stream.Title) {
+			!IsCommentaryOrDescriptionTrack(stream.Title) {
 			log.Printf("[track] Selected TrueHD audio track %d (%s) for language %q (only option) - will need HLS transcoding",
 				stream.Index, stream.Codec, preferredLanguage)
 			return stream.Index
 		}
 	}
 
-	// Pass 4: Compatible codec matching language, including commentary
+	// Pass 4: Compatible codec matching language, including commentary/AD (fallback)
 	for _, stream := range streams {
 		if matchesLanguage(stream.Language, stream.Title, normalizedPref) &&
 			CompatibleAudioCodecs[strings.ToLower(stream.Codec)] {
-			log.Printf("[track] Fallback to compatible audio track %d (%s, commentary) for language %q",
+			log.Printf("[track] ⚠️ Fallback to commentary/AD track %d (%s) for language %q",
 				stream.Index, stream.Codec, preferredLanguage)
 			return stream.Index
 		}
 	}
 
-	// Pass 5: Non-TrueHD incompatible codec matching language, including commentary
+	// Pass 5: Non-TrueHD incompatible codec matching language, including commentary/AD (fallback)
 	for _, stream := range streams {
 		if matchesLanguage(stream.Language, stream.Title, normalizedPref) &&
 			!IsTrueHDCodec(stream.Codec) {
-			log.Printf("[track] Fallback to non-TrueHD audio track %d (%s, commentary) for language %q - will need HLS transcoding",
+			log.Printf("[track] ⚠️ Fallback to non-TrueHD audio track %d (%s, commentary/AD) for language %q - will need HLS transcoding",
 				stream.Index, stream.Codec, preferredLanguage)
 			return stream.Index
 		}
 	}
 
-	// Pass 6: TrueHD/MLP matching language, including commentary (last resort)
+	// Pass 6: TrueHD/MLP matching language, including commentary/AD (last resort)
 	for _, stream := range streams {
 		if matchesLanguage(stream.Language, stream.Title, normalizedPref) {
-			log.Printf("[track] Fallback to TrueHD audio track %d (%s, commentary) for language %q (only option) - will need HLS transcoding",
+			log.Printf("[track] ⚠️ Fallback to TrueHD audio track %d (%s, commentary/AD) for language %q (only option) - will need HLS transcoding",
 				stream.Index, stream.Codec, preferredLanguage)
 			return stream.Index
 		}

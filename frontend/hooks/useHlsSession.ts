@@ -129,6 +129,17 @@ export interface HlsSessionActions {
   updateSessionBufferEnd: (value: number) => void;
   /** Set pending seek */
   setPendingSeek: (value: number | null) => void;
+  /** Get keepalive health status */
+  getKeepaliveHealth: () => KeepaliveHealth;
+}
+
+interface KeepaliveHealth {
+  lastSuccessTime: number;      // Timestamp of last successful keepalive
+  lastFailureTime: number;      // Timestamp of last failed keepalive
+  consecutiveFailures: number;  // Counter for failures in a row
+  totalSent: number;            // Total keepalives attempted
+  totalFailed: number;          // Total keepalives that failed
+  isDegraded: boolean;          // True if failure rate > 30%
 }
 
 const MAX_RETRY_COUNT = 3;
@@ -174,6 +185,16 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
   const subtitleTrackRef = useRef(subtitleTrackIndex);
   const retryCountRef = useRef(0);
   const isSeekingRef = useRef(false);
+
+  // Keepalive health tracking
+  const keepaliveHealthRef = useRef<KeepaliveHealth>({
+    lastSuccessTime: Date.now(),
+    lastFailureTime: 0,
+    consecutiveFailures: 0,
+    totalSent: 0,
+    totalFailed: 0,
+    isDegraded: false,
+  });
 
   // Extract session ID from existing playlist URL
   useEffect(() => {
@@ -453,8 +474,25 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
       const sessionId = sessionIdRef.current;
       if (!sessionId) return null;
 
+      keepaliveHealthRef.current.totalSent++;
+
       try {
         const response = await apiService.keepaliveHlsSession(sessionId, currentTime, bufferStart);
+
+        // SUCCESS
+        keepaliveHealthRef.current.lastSuccessTime = Date.now();
+        keepaliveHealthRef.current.consecutiveFailures = 0;
+        
+        // Check if degraded state should be cleared
+        const failureRate = keepaliveHealthRef.current.totalFailed / keepaliveHealthRef.current.totalSent;
+        if (keepaliveHealthRef.current.isDegraded && failureRate < 0.2) {
+          console.log('[useHlsSession] ✅ Keepalive health RECOVERED', {
+            failureRate: (failureRate * 100).toFixed(1) + '%',
+            totalSent: keepaliveHealthRef.current.totalSent,
+            totalFailed: keepaliveHealthRef.current.totalFailed,
+          });
+          keepaliveHealthRef.current.isDegraded = false;
+        }
 
         // Update state with keyframeDelta from backend (for subtitle sync)
         if (typeof response.keyframeDelta === 'number') {
@@ -487,6 +525,29 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
           segmentDuration: response.segmentDuration,
         };
       } catch (error) {
+        // FAILURE
+        keepaliveHealthRef.current.lastFailureTime = Date.now();
+        keepaliveHealthRef.current.consecutiveFailures++;
+        keepaliveHealthRef.current.totalFailed++;
+        
+        const failureRate = keepaliveHealthRef.current.totalFailed / keepaliveHealthRef.current.totalSent;
+        
+        // Alert on consecutive failures
+        if (keepaliveHealthRef.current.consecutiveFailures === 3) {
+          console.error('[useHlsSession] ⚠️ KEEPALIVE DEGRADED - 3 consecutive failures');
+        }
+        
+        // Alert on high failure rate
+        if (!keepaliveHealthRef.current.isDegraded && failureRate > 0.3) {
+          console.error('[useHlsSession] 🚨 KEEPALIVE HEALTH CRITICAL', {
+            failureRate: (failureRate * 100).toFixed(1) + '%',
+            consecutiveFailures: keepaliveHealthRef.current.consecutiveFailures,
+            totalSent: keepaliveHealthRef.current.totalSent,
+            totalFailed: keepaliveHealthRef.current.totalFailed,
+          });
+          keepaliveHealthRef.current.isDegraded = true;
+        }
+        
         console.warn('[useHlsSession] Keepalive failed:', error);
         return null;
       }
@@ -559,6 +620,11 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
     pendingSeekRef.current = value;
   }, []);
 
+  // Get keepalive health status
+  const getKeepaliveHealth = useCallback((): KeepaliveHealth => {
+    return { ...keepaliveHealthRef.current };
+  }, []);
+
   // Expose refs for synchronous access in player.tsx
   const refs: HlsSessionRefs = useMemo(
     () => ({
@@ -587,6 +653,7 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
       setSkipTrackPreferences,
       updateSessionBufferEnd,
       setPendingSeek,
+      getKeepaliveHealth,
     }),
     [
       createSession,
@@ -601,6 +668,7 @@ export function useHlsSession(options: HlsSessionOptions): [HlsSessionState, Hls
       setSkipTrackPreferences,
       updateSessionBufferEnd,
       setPendingSeek,
+      getKeepaliveHealth,
     ],
   );
 

@@ -356,6 +356,22 @@ type HLSSession struct {
 
 	// Live TV session fields
 	IsLive bool // True for live TV streams (no duration, no seeking)
+
+	// Platform-specific timeout tuning
+	Platform               string        // "Android", "iOS", "tvOS", "Web", "Unknown"
+	IdleTimeoutOverride    time.Duration // Platform-specific idle timeout
+	StartupTimeoutOverride time.Duration // Platform-specific startup timeout
+
+	// Segment request pattern tracking
+	SegmentRequestTimes   []time.Time // Last 20 request timestamps
+	SegmentRequestTimesmu sync.Mutex  // Protect the slice
+
+	// Playlist refresh rate detection
+	PlaylistRefreshInterval time.Duration // Detected average interval
+	PlaylistRefreshCount    int           // Total playlist requests
+	LastPlaylistRequest     time.Time     // Last playlist request time
+	LastPlaylistRefreshLog  time.Time     // When we last logged refresh stats
+	LastPatternLog          time.Time     // When we last logged segment pattern
 }
 
 const (
@@ -397,6 +413,22 @@ const (
 	hlsBufferResumeThreshold = 20 // ~80 seconds of buffer ahead
 )
 
+// FFmpegErrorType classifies FFmpeg errors for better debugging
+type FFmpegErrorType struct {
+	Category    string   // "bitstream", "decoder", "network", "disk", "timeout", "unknown"
+	Severity    string   // "warning", "error", "fatal"
+	Message     string   // Human-readable description
+	Recoverable bool     // Can we retry?
+	RawError    string   // Original FFmpeg stderr snippet
+}
+
+// truncateString truncates a string to maxLen characters, adding "..." if truncated
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
 
 // HLSManager manages HLS transcoding sessions
 type HLSManager struct {
@@ -444,6 +476,274 @@ func NewHLSManager(baseDir, ffmpegPath, ffprobePath string, streamer streaming.P
 	go manager.cleanupLoop()
 
 	return manager
+}
+
+// classifyFFmpegError analyzes FFmpeg stderr to categorize the error
+func (m *HLSManager) classifyFFmpegError(stderr string) FFmpegErrorType {
+	lower := strings.ToLower(stderr)
+	
+	// Bitstream errors (corrupted video data)
+	if strings.Contains(lower, "invalid nal unit size") ||
+	   strings.Contains(lower, "error while decoding") ||
+	   strings.Contains(lower, "corrupt decoded frame") ||
+	   strings.Contains(lower, "concealing") {
+		return FFmpegErrorType{
+			Category:    "bitstream",
+			Severity:    "error",
+			Message:     "Corrupted or invalid video data",
+			Recoverable: false,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Decoder errors (codec not supported, HDR issues)
+	if strings.Contains(lower, "decoder initialization failed") ||
+	   strings.Contains(lower, "no decoder available") ||
+	   strings.Contains(lower, "unknown codec") ||
+	   strings.Contains(lower, "codec not currently supported") {
+		return FFmpegErrorType{
+			Category:    "decoder",
+			Severity:    "fatal",
+			Message:     "Codec not supported or decoder unavailable",
+			Recoverable: false,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Network errors (source unreachable)
+	if strings.Contains(lower, "i/o error") ||
+	   strings.Contains(lower, "connection refused") ||
+	   strings.Contains(lower, "connection timed out") ||
+	   strings.Contains(lower, "no route to host") {
+		return FFmpegErrorType{
+			Category:    "network",
+			Severity:    "warning",
+			Message:     "Network error accessing source file",
+			Recoverable: true,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Disk errors (no space, permissions)
+	if strings.Contains(lower, "no space left") ||
+	   strings.Contains(lower, "permission denied") ||
+	   strings.Contains(lower, "read-only file system") {
+		return FFmpegErrorType{
+			Category:    "disk",
+			Severity:    "fatal",
+			Message:     "Disk full or insufficient permissions",
+			Recoverable: false,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Timeout/hanging
+	if strings.Contains(lower, "timed out") ||
+	   strings.Contains(lower, "timeout") {
+		return FFmpegErrorType{
+			Category:    "timeout",
+			Severity:    "error",
+			Message:     "Operation timed out",
+			Recoverable: true,
+			RawError:    truncateString(stderr, 200),
+		}
+	}
+	
+	// Unknown error
+	return FFmpegErrorType{
+		Category:    "unknown",
+		Severity:    "error",
+		Message:     "Unclassified FFmpeg error",
+		Recoverable: false,
+		RawError:    truncateString(stderr, 200),
+	}
+}
+
+// detectPlatform extracts platform from User-Agent header
+func (m *HLSManager) detectPlatform(userAgent string) string {
+	ua := strings.ToLower(userAgent)
+	
+	if strings.Contains(ua, "android") {
+		return "Android"
+	}
+	if strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") {
+		return "iOS"
+	}
+	if strings.Contains(ua, "appletv") || strings.Contains(ua, "tvos") {
+		return "tvOS"
+	}
+	if strings.Contains(ua, "chrome") || strings.Contains(ua, "firefox") || strings.Contains(ua, "safari") {
+		return "Web"
+	}
+	return "Unknown"
+}
+
+// getPlatformTimeouts returns platform-optimized timeout values
+func (m *HLSManager) getPlatformTimeouts(platform string, hasHDR bool) (idleTimeout, startupTimeout time.Duration) {
+	switch platform {
+	case "Android":
+		// Android needs more time for HDR decoder initialization
+		if hasHDR {
+			return 90 * time.Second, 45 * time.Second
+		}
+		return 45 * time.Second, 30 * time.Second
+		
+	case "iOS", "tvOS":
+		// iOS/tvOS hardware decoders are faster and more reliable
+		if hasHDR {
+			return 60 * time.Second, 30 * time.Second
+		}
+		return 30 * time.Second, 20 * time.Second
+		
+	case "Web":
+		// Web browsers buffer aggressively
+		return 60 * time.Second, 30 * time.Second
+		
+	default:
+		// Conservative defaults for unknown platforms
+		if hasHDR {
+			return 75 * time.Second, 40 * time.Second
+		}
+		return 45 * time.Second, 30 * time.Second
+	}
+}
+
+// recordSegmentRequest tracks segment request timing for pattern analysis
+func (m *HLSManager) recordSegmentRequest(session *HLSSession, segmentNum int) {
+	now := time.Now()
+	
+	session.SegmentRequestTimesmu.Lock()
+	defer session.SegmentRequestTimesmu.Unlock()
+	
+	// Keep only last 20 requests
+	session.SegmentRequestTimes = append(session.SegmentRequestTimes, now)
+	if len(session.SegmentRequestTimes) > 20 {
+		session.SegmentRequestTimes = session.SegmentRequestTimes[1:]
+	}
+}
+
+// Helper functions for segment pattern analysis
+func average(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, v := range vals {
+		sum += v
+	}
+	return sum / float64(len(vals))
+}
+
+func min(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	minVal := vals[0]
+	for _, v := range vals {
+		if v < minVal {
+			minVal = v
+		}
+	}
+	return minVal
+}
+
+func max(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	maxVal := vals[0]
+	for _, v := range vals {
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+	return maxVal
+}
+
+// analyzeSegmentPattern analyzes segment request pattern for buffering insights
+func (m *HLSManager) analyzeSegmentPattern(session *HLSSession) map[string]interface{} {
+	session.SegmentRequestTimesmu.Lock()
+	times := make([]time.Time, len(session.SegmentRequestTimes))
+	copy(times, session.SegmentRequestTimes)
+	session.SegmentRequestTimesmu.Unlock()
+	
+	if len(times) < 2 {
+		return nil
+	}
+	
+	// Calculate intervals between requests
+	var intervals []float64
+	for i := 1; i < len(times); i++ {
+		intervalMs := times[i].Sub(times[i-1]).Milliseconds()
+		intervals = append(intervals, float64(intervalMs))
+	}
+	
+	// Calculate statistics
+	avgInterval := average(intervals)
+	minInterval := min(intervals)
+	maxInterval := max(intervals)
+	
+	// Detect patterns
+	burstCount := 0  // Requests < 1s apart (prefetching)
+	pauseDetected := false
+	
+	for _, interval := range intervals {
+		if interval < 1000 {
+			burstCount++
+		}
+		if interval > 5000 {
+			pauseDetected = true
+		}
+	}
+	
+	return map[string]interface{}{
+		"avgIntervalMs":  avgInterval,
+		"minIntervalMs":  minInterval,
+		"maxIntervalMs":  maxInterval,
+		"burstCount":     burstCount,
+		"pauseDetected":  pauseDetected,
+		"sampleSize":     len(intervals),
+	}
+}
+
+// updatePlaylistRefreshStats tracks playlist refresh rate for player behavior analysis
+func (m *HLSManager) updatePlaylistRefreshStats(session *HLSSession) {
+	now := time.Now()
+	
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
+	lastRequest := session.LastPlaylistRequest
+	session.LastPlaylistRequest = now
+	session.PlaylistRefreshCount++
+	
+	if !lastRequest.IsZero() {
+		interval := now.Sub(lastRequest)
+		
+		// Calculate exponential moving average
+		if session.PlaylistRefreshInterval == 0 {
+			session.PlaylistRefreshInterval = interval
+		} else {
+			alpha := 0.3  // Weight for new value
+			session.PlaylistRefreshInterval = time.Duration(
+				float64(session.PlaylistRefreshInterval)*(1-alpha) + 
+				float64(interval)*alpha,
+			)
+		}
+		
+		// Log unusual refresh rates
+		if interval > 30*time.Second && session.PlaylistRefreshCount > 3 {
+			log.Printf("[hls] session %s: ⚠️ SLOW playlist refresh - %.1fs interval (platform: %s)",
+				session.ID, interval.Seconds(), session.Platform)
+		}
+		
+		// Log stats periodically
+		if time.Since(session.LastPlaylistRefreshLog) > 60*time.Second {
+			log.Printf("[hls] session %s: playlist refresh stats - avg_interval=%.1fs count=%d",
+				session.ID, session.PlaylistRefreshInterval.Seconds(), session.PlaylistRefreshCount)
+			session.LastPlaylistRefreshLog = now
+		}
+	}
 }
 
 // ConfigureLocalWebDAVAccess allows the manager to build direct URLs against the local WebDAV server.
@@ -682,13 +982,26 @@ func (m *HLSManager) buildLocalWebDAVURLFromPath(path string) (string, bool) {
 }
 
 // CreateSession starts a new HLS transcoding session
-func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPath string, hasDV bool, dvProfile string, hasHDR bool, forceAAC bool, startOffset float64, transcodingOffset float64, audioTrackIndex int, subtitleTrackIndex int, profileID string, profileName string, clientIP string) (*HLSSession, error) {
+func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPath string, hasDV bool, dvProfile string, hasHDR bool, forceAAC bool, startOffset float64, transcodingOffset float64, audioTrackIndex int, subtitleTrackIndex int, profileID string, profileName string, clientIP string, r *http.Request) (*HLSSession, error) {
 	sessionID := generateSessionID()
 	outputDir := filepath.Join(m.baseDir, sessionID)
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("create session directory: %w", err)
 	}
+
+	// Detect platform from User-Agent
+	var userAgent string
+	var platform string
+	if r != nil {
+		userAgent = r.Header.Get("User-Agent")
+		platform = m.detectPlatform(userAgent)
+	} else {
+		platform = "Unknown"
+	}
+	
+	// Get platform-specific timeouts
+	idleTimeout, startupTimeout := m.getPlatformTimeouts(platform, hasHDR || hasDV)
 
 	// Use background context so transcoding continues after HTTP response
 	// The original ctx is only used for the initial setup
@@ -755,34 +1068,37 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 	}
 
 	session := &HLSSession{
-		ID:                  sessionID,
-		Path:                path,
-		OriginalPath:        originalPath,
-		OutputDir:           outputDir,
-		CreatedAt:           now,
-		LastAccess:          now,
-		Cancel:              cancel,
-		HasDV:               hasDV,
-		DVProfile:           dvProfile,
-		HasHDR:              hasHDR,
-		Duration:            duration,
-		StartOffset:         startOffset,
-		TranscodingOffset:   actualTranscodingOffset, // May differ from StartOffset if keyframe-aligned
-		ActualStartOffset:   actualTranscodingOffset, // For subtitle sync
-		ProfileID:           profileID,
-		ProfileName:         profileName,
-		ClientIP:            clientIP,
-		AudioTrackIndex:     audioTrackIndex,
-		SubtitleTrackIndex:  subtitleTrackIndex,
-		StreamStartTime:      now,
-		LastSegmentRequest:      now, // Initialize to now to avoid immediate timeout
-		LastKeepaliveTime:       now, // Initialize to now to avoid immediate timeout
-		MinSegmentRequested:     -1,  // Initialize to -1 (no segments requested yet)
-		MaxSegmentRequested:     -1,  // Initialize to -1 (no segments requested yet)
-		LastPlaybackSegment:     -1,  // Initialize to -1 (no keepalive time reported yet)
-		LastSegmentServed:       -1,  // Initialize to -1 (no segments served yet)
-		EarliestBufferedSegment: -1,  // Initialize to -1 (no buffer info reported yet)
-		ProbeData:               probeData, // Cache unified probe results for startTranscoding
+		ID:                     sessionID,
+		Path:                   path,
+		OriginalPath:           originalPath,
+		OutputDir:              outputDir,
+		CreatedAt:              now,
+		LastAccess:             now,
+		Cancel:                 cancel,
+		HasDV:                  hasDV,
+		DVProfile:              dvProfile,
+		HasHDR:                 hasHDR,
+		Duration:               duration,
+		StartOffset:            startOffset,
+		TranscodingOffset:      actualTranscodingOffset, // May differ from StartOffset if keyframe-aligned
+		ActualStartOffset:      actualTranscodingOffset, // For subtitle sync
+		ProfileID:              profileID,
+		ProfileName:            profileName,
+		ClientIP:               clientIP,
+		AudioTrackIndex:        audioTrackIndex,
+		SubtitleTrackIndex:     subtitleTrackIndex,
+		StreamStartTime:        now,
+		LastSegmentRequest:     now, // Initialize to now to avoid immediate timeout
+		LastKeepaliveTime:      now, // Initialize to now to avoid immediate timeout
+		MinSegmentRequested:    -1,  // Initialize to -1 (no segments requested yet)
+		MaxSegmentRequested:    -1,  // Initialize to -1 (no segments requested yet)
+		LastPlaybackSegment:    -1,  // Initialize to -1 (no keepalive time reported yet)
+		LastSegmentServed:      -1,  // Initialize to -1 (no segments served yet)
+		EarliestBufferedSegment: -1, // Initialize to -1 (no buffer info reported yet)
+		ProbeData:              probeData, // Cache unified probe results for startTranscoding
+		Platform:               platform,
+		IdleTimeoutOverride:    idleTimeout,
+		StartupTimeoutOverride: startupTimeout,
 	}
 
 	m.mu.Lock()
@@ -799,7 +1115,8 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 		}
 	}()
 
-	log.Printf("[hls] created session %s for path %q (DV=%v, duration=%.2fs, startOffset=%.2fs)", sessionID, path, hasDV, duration, startOffset)
+	log.Printf("[hls] created session %s for path %q (DV=%v, duration=%.2fs, startOffset=%.2fs, platform=%s, idle_timeout=%s, startup_timeout=%s)",
+		sessionID, path, hasDV, duration, startOffset, platform, idleTimeout, startupTimeout)
 
 	// Return immediately - modern HLS players (AVPlayer, ExoPlayer) handle empty playlists
 	// by polling until segments are available. This eliminates the 5-6 second blocking wait.
@@ -2953,6 +3270,9 @@ func (m *HLSManager) ServePlaylist(w http.ResponseWriter, r *http.Request, sessi
 	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter on playlist request
 	session.mu.Unlock()
 
+	// Track playlist refresh pattern
+	m.updatePlaylistRefreshStats(session)
+
 	playlistPath := filepath.Join(session.OutputDir, "stream.m3u8")
 
 	// Wait for playlist to be created (up to 60 seconds)
@@ -3131,6 +3451,9 @@ func (m *HLSManager) ServeSegment(w http.ResponseWriter, r *http.Request, sessio
 	// Parse segment number from filename (e.g., "segment123.ts" -> 123)
 	var segmentNum int
 	if _, err := fmt.Sscanf(segmentName, "segment%d.", &segmentNum); err == nil {
+		// Track segment request timing for pattern analysis
+		m.recordSegmentRequest(session, segmentNum)
+		
 		// Update tracking for this segment request
 		session.mu.Lock()
 		if session.MinSegmentRequested < 0 || segmentNum < session.MinSegmentRequested {
