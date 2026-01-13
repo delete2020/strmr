@@ -332,6 +332,10 @@ type HLSSession struct {
 	EarliestBufferedSegment  int // Earliest segment still in player's buffer from keepalive (-1 = unknown)
 	Paused                   bool // True if FFmpeg is paused (SIGSTOP) waiting for player to catch up
 
+	// Multi-signal timeout detection (prevents false positives during decoder transitions)
+	ConsecutiveTimeoutChecks int       // Number of consecutive timeout checks that exceeded threshold
+	LastKeepaliveTime        time.Time // Last keepalive request (even without time parameter)
+
 	// Input error recovery (for usenet disconnections)
 	InputErrorDetected bool // Set to true when FFmpeg input stream fails (usenet disconnect)
 	RecoveryAttempts   int  // Number of times we've attempted to recover this session
@@ -358,9 +362,16 @@ const (
 	// How long to wait with no segment requests before killing FFmpeg
 	hlsIdleTimeout = 30 * time.Second
 
+	// Extended timeout for HDR/HDR10+ content (Android decoder initialization can take 5-15s)
+	hlsHDRIdleTimeout = 60 * time.Second
+
 	// How long to wait for the first segment request before killing FFmpeg
 	// (prevents sessions that never receive any requests from lingering)
 	hlsStartupTimeout = 30 * time.Second
+
+	// Number of consecutive timeout checks required before killing FFmpeg
+	// This prevents false positives during brief decoder transitions, network buffering, etc.
+	hlsTimeoutConsecutiveChecks = 3
 
 	// Matroska-specific tuning for pipe-based seeks
 	matroskaHeaderPrefixBytes int64 = 2 * 1024 * 1024 // copy 2MB of header metadata
@@ -761,6 +772,7 @@ func (m *HLSManager) CreateSession(ctx context.Context, path string, originalPat
 		SubtitleTrackIndex:  subtitleTrackIndex,
 		StreamStartTime:      now,
 		LastSegmentRequest:      now, // Initialize to now to avoid immediate timeout
+		LastKeepaliveTime:       now, // Initialize to now to avoid immediate timeout
 		MinSegmentRequested:     -1,  // Initialize to -1 (no segments requested yet)
 		MaxSegmentRequested:     -1,  // Initialize to -1 (no segments requested yet)
 		LastPlaybackSegment:     -1,  // Initialize to -1 (no keepalive time reported yet)
@@ -822,6 +834,7 @@ func (m *HLSManager) CreateLiveSession(ctx context.Context, liveURL string) (*HL
 		TranscodingOffset:       0,
 		StreamStartTime:         now,
 		LastSegmentRequest:      now,
+		LastKeepaliveTime:       now,
 		MinSegmentRequested:     -1,
 		MaxSegmentRequested:     -1,
 		LastPlaybackSegment:     -1,
@@ -2012,8 +2025,11 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 			case <-ticker.C:
 				session.mu.RLock()
 				lastRequest := session.LastSegmentRequest
+				lastKeepalive := session.LastKeepaliveTime
 				segmentCount := session.SegmentRequestCount
 				completed := session.Completed
+				hasHDR := session.HasHDR
+				hasDV := session.HasDV
 				session.mu.RUnlock()
 
 				// Don't check idle timeout if already completed
@@ -2031,7 +2047,13 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 					return
 				}
 
-				idleTime := time.Since(lastRequest)
+				// Use the most recent activity indicator (either segment request or keepalive)
+				lastActivity := lastRequest
+				if lastKeepalive.After(lastActivity) {
+					lastActivity = lastKeepalive
+				}
+
+				idleTime := time.Since(lastActivity)
 				sessionAge := time.Since(session.CreatedAt)
 
 				// Check for startup timeout: no segments requested within hlsStartupTimeout
@@ -2055,27 +2077,55 @@ func (m *HLSManager) startTranscoding(ctx context.Context, session *HLSSession, 
 					return
 				}
 
-				// Enforce idle timeout if we've had at least one segment request
-				if segmentCount > 0 && idleTime > hlsIdleTimeout {
-					log.Printf("[hls] session %s: IDLE_TIMEOUT triggered after %v (last request %v ago, %d segments served)",
-						session.ID, hlsIdleTimeout, idleTime, segmentCount)
+				// Select timeout based on content type (HDR/DV needs longer timeout for decoder init)
+				timeoutThreshold := hlsIdleTimeout
+				if hasHDR || hasDV {
+					timeoutThreshold = hlsHDRIdleTimeout
+				}
 
+				// Multi-signal timeout detection: require multiple consecutive checks exceeding threshold
+				// This prevents false positives during brief pauses (HDR decoder init, network buffering, etc.)
+				if segmentCount > 0 && idleTime > timeoutThreshold {
 					session.mu.Lock()
-					session.IdleTimeoutTriggered = true
+					session.ConsecutiveTimeoutChecks++
+					newConsecutiveTimeouts := session.ConsecutiveTimeoutChecks
 					session.mu.Unlock()
 
-					// Cancel the context to stop FFmpeg
-					if session.Cancel != nil {
-						session.Cancel()
-					}
+					log.Printf("[hls] session %s: IDLE_CHECK - idle for %v (threshold=%v, consecutive=%d/%d, lastSegment=%v, lastKeepalive=%v)",
+						session.ID, idleTime, timeoutThreshold, newConsecutiveTimeouts, hlsTimeoutConsecutiveChecks,
+						time.Since(lastRequest), time.Since(lastKeepalive))
 
-					// Kill the FFmpeg process if it's still running
-					if cmd != nil && cmd.Process != nil {
-						log.Printf("[hls] session %s: killing idle FFmpeg process (PID=%d)",
-							session.ID, cmd.Process.Pid)
-						_ = cmd.Process.Kill()
+					// Only kill FFmpeg after multiple consecutive timeout checks
+					if newConsecutiveTimeouts >= hlsTimeoutConsecutiveChecks {
+						log.Printf("[hls] session %s: IDLE_TIMEOUT triggered after %v (idle for %v, %d consecutive checks, %d segments served)",
+							session.ID, timeoutThreshold, idleTime, newConsecutiveTimeouts, segmentCount)
+
+						session.mu.Lock()
+						session.IdleTimeoutTriggered = true
+						session.mu.Unlock()
+
+						// Cancel the context to stop FFmpeg
+						if session.Cancel != nil {
+							session.Cancel()
+						}
+
+						// Kill the FFmpeg process if it's still running
+						if cmd != nil && cmd.Process != nil {
+							log.Printf("[hls] session %s: killing idle FFmpeg process (PID=%d)",
+								session.ID, cmd.Process.Pid)
+							_ = cmd.Process.Kill()
+						}
+						return
 					}
-					return
+				} else {
+					// Activity detected within threshold - reset consecutive timeout counter
+					session.mu.Lock()
+					if session.ConsecutiveTimeoutChecks > 0 {
+						log.Printf("[hls] session %s: activity detected, resetting timeout counter (was %d)",
+							session.ID, session.ConsecutiveTimeoutChecks)
+						session.ConsecutiveTimeoutChecks = 0
+					}
+					session.mu.Unlock()
 				}
 
 			case <-idleDone:
@@ -2554,6 +2604,7 @@ func (m *HLSManager) KeepAlive(w http.ResponseWriter, r *http.Request, sessionID
 
 	session.mu.Lock()
 	session.LastSegmentRequest = time.Now()
+	session.LastKeepaliveTime = time.Now()
 
 	// If frontend reports playback time, use it to update playback tracking for rate limiting and cleanup
 	if timeStr := r.URL.Query().Get("time"); timeStr != "" {
@@ -2714,6 +2765,8 @@ func (m *HLSManager) Seek(w http.ResponseWriter, r *http.Request, sessionID stri
 	session.ActualStartOffset = keyframePos // For subtitle sync
 	session.CreatedAt = time.Now()
 	session.LastSegmentRequest = time.Now()
+	session.LastKeepaliveTime = time.Now()
+	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter for new seek
 	session.SegmentsCreated = 0
 	session.MinSegmentRequested = -1
 	session.MaxSegmentRequested = -1
@@ -2890,6 +2943,7 @@ func (m *HLSManager) ServePlaylist(w http.ResponseWriter, r *http.Request, sessi
 	// Update last activity time (playlist requests indicate active playback)
 	session.mu.Lock()
 	session.LastSegmentRequest = time.Now()
+	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter on playlist request
 	session.mu.Unlock()
 
 	playlistPath := filepath.Join(session.OutputDir, "stream.m3u8")
@@ -3087,6 +3141,7 @@ func (m *HLSManager) ServeSegment(w http.ResponseWriter, r *http.Request, sessio
 	session.mu.Lock()
 	session.LastSegmentRequest = time.Now()
 	session.SegmentRequestCount++
+	session.ConsecutiveTimeoutChecks = 0 // Reset timeout counter on segment request
 	requestCount := session.SegmentRequestCount
 	session.mu.Unlock()
 
